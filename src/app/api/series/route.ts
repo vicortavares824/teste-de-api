@@ -41,6 +41,9 @@ export async function GET(request: Request) {
   const end = start + pageSize;
   const idsLote = ids.slice(start, end);
 
+  // Retorna o total de páginas em uma variável separada
+  const totalPaginas = Math.ceil(ids.length / pageSize);
+
   // Busca todos os resultados
   async function buscarDetalhes(id: string): Promise<MediaDetalhe | null> {
     try {
@@ -60,13 +63,20 @@ export async function GET(request: Request) {
     if (detalhe) resultados.push(detalhe);
   }
 
+  // Ordena por data (mais recente primeiro)
+  resultados.sort((a, b) => {
+    const dataA = a.release_date || a.first_air_date || '';
+    const dataB = b.release_date || b.first_air_date || '';
+    return dataB.localeCompare(dataA);
+  });
+
   if (resultados.length === 0) {
     return NextResponse.json({ error: 'Nenhum resultado encontrado no TMDb para os IDs informados.', ids: idsLote }, { status: 404 });
   }
 
   return NextResponse.json({
     page,
-    totalPages: Math.ceil(ids.length / pageSize),
+    totalPaginas,
     totalResults: ids.length,
     results: resultados
   });

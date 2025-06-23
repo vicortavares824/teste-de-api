@@ -10,7 +10,7 @@ export async function GET(request: Request) {
   }
 
   // Busca na página de pesquisa do Superflix
-  const url = `https://superflixapi.pw/pesquisar/?paged=1&search=${encodeURIComponent(query)}`;
+  const url = `https://superflixapi.lat/pesquisar/?paged=1&search=${encodeURIComponent(query)}`;
   let html = '';
   try {
     const resp = await axios.get(url);
@@ -30,10 +30,10 @@ export async function GET(request: Request) {
     let tmdb = '';
     $(el).find('.hover .btn').each((_, btn) => {
       const dataCopy = $(btn).attr('data-copy');
-      if (dataCopy && (dataCopy.startsWith('https://superflixapi.pw/filme/') || dataCopy.startsWith('https://superflixapi.pw/serie/'))) {
+      if (dataCopy && (dataCopy.startsWith('https://superflixapi.lat/filme/') || dataCopy.startsWith('https://superflixapi.lat/serie/'))) {
         link = dataCopy;
         // Extrai apenas o ID do final do link
-        tmdb = dataCopy.replace('https://superflixapi.pw/filme/', '').replace('https://superflixapi.pw/serie/', '');
+        tmdb = dataCopy.replace('https://superflixapi.lat/filme/', '').replace('https://superflixapi.lat/serie/', '');
       }
     });
     if (title && link) {

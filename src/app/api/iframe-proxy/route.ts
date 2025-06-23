@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import axios from 'axios';
 
 // Script seguro para bloqueio de popups, overlays e anúncios
 const blockScript = `
@@ -204,32 +203,12 @@ true;
 `;
 
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const tipo = searchParams.get('tipo'); // 'movie' ou 'serie'
-  const tmdb = searchParams.get('tmdb'); // id do filme ou série
-
-  if (!tipo || !tmdb) {
-    return NextResponse.json({ error: 'Parâmetros "tipo" e "tmdb" obrigatórios.' }, { status: 400 });
-  }
-
-  const url =
-    tipo === 'movie'
-      ? `https://superflixapi.nexus/filme/${tmdb}#color:198754`
-      : `https://superflixapi.nexus/serie/${tmdb}#color:198754`;
-
-  try {
-    let html = (await axios.get(url, { responseType: 'text' })).data;
-    // Remove ou reescreve scripts problemáticos
-    html = html.replace(/<script[^>]*src=["']?\/cdn-cgi\/(.*?)<\/script>/g, '');
-    html = html.replace(/src=["']?\/cdn-cgi\//g, 'src="https://superflixapi.nexus/cdn-cgi/');
-    return NextResponse.json({ html, blockScript }, {
-      status: 200,
-      headers: {
-        'content-type': 'application/json; charset=utf-8',
-        'Access-Control-Allow-Origin': '*'
-      }
-    });
-  } catch (e: any) {
-    return NextResponse.json({ error: 'Erro ao buscar a página', detalhes: e.message }, { status: 500 });
-  }
+  // Retorna apenas o script de bloqueio
+  return NextResponse.json({ blockScript }, {
+    status: 200,
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      'Access-Control-Allow-Origin': '*'
+    }
+  });
 }

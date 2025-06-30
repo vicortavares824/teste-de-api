@@ -10,7 +10,7 @@ export async function GET(request: Request) {
   }
 
   // Busca na página de pesquisa do Superflix
-  const url = `https://superflixapi.lat/pesquisar/?paged=1&search=${encodeURIComponent(query)}`;
+  const url = `https://superflixapi.blog/pesquisar/?paged=1&search=${encodeURIComponent(query)}`;
   let html = '';
   try {
     const resp = await axios.get(url);

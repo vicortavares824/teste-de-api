@@ -30,10 +30,10 @@ export async function GET(request: Request) {
     let tmdb = '';
     $(el).find('.hover .btn').each((_, btn) => {
       const dataCopy = $(btn).attr('data-copy');
-      if (dataCopy && (dataCopy.startsWith('https://superflixapi.lat/filme/') || dataCopy.startsWith('https://superflixapi.lat/serie/'))) {
+      if (dataCopy && (dataCopy.startsWith('https://superflixapi.blog/filme/') || dataCopy.startsWith('https://superflixapi.blog/serie/'))) {
         link = dataCopy;
         // Extrai apenas o ID do final do link
-        tmdb = dataCopy.replace('https://superflixapi.lat/filme/', '').replace('https://superflixapi.lat/serie/', '');
+        tmdb = dataCopy.replace('https://superflixapi.blog/filme/', '').replace('https://superflixapi.blog/serie/', '');
       }
     });
     if (title && link) {

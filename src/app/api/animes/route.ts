@@ -3,7 +3,7 @@ import axios from 'axios';
 
 const TMDB_API_KEY = process.env.TMDB_API_KEY || '60b55db2a598d09f914411a36840d1cb';
 const BASE_URL_TMDB = 'https://api.themoviedb.org/3';
-const IDS_API_URL = 'https://superflixapi.wales/animes/export/';
+const IDS_API_URL = 'https://superflixapi.my/animes/export/';
 
 type MediaDetalhe = {
   id: number;

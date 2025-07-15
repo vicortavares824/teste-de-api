@@ -34,7 +34,7 @@ export async function GET(request: Request) {
       if (dataCopy && (dataCopy.startsWith(`${BASE_SUPERFLIX_URL}/filme/`) || dataCopy.startsWith(`${BASE_SUPERFLIX_URL}/serie/`))) {
         link = dataCopy;
         // Extrai apenas o ID do final do link
-        tmdb = dataCopy.replace(`${BASE_SUPERFLIX_URL}/filme/`, '').replace(`${BASE_SUPERFLIX_URL}/filme/`, '');
+        tmdb = dataCopy.replace(`${BASE_SUPERFLIX_URL}/filme/`, '').replace(`${BASE_SUPERFLIX_URL}/serie/`, '');
       }
     });
     if (title && link) {

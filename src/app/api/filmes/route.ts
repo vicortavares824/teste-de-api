@@ -3,7 +3,7 @@ import axios from 'axios';
 import { BASE_SUPERFLIX_URL } from '../../../url';
 const TMDB_API_KEY = process.env.TMDB_API_KEY || '60b55db2a598d09f914411a36840d1cb';
 const BASE_URL_TMDB = 'https://api.themoviedb.org/3';
-const IDS_API_URL = `${BASE_SUPERFLIX_URL}/filmes/lista/`;
+const IDS_API_URL = `${BASE_SUPERFLIX_URL}/lista?category=movie&type=tmdb&format=json`;
 
 type MediaDetalhe = {
   id: number;
@@ -17,14 +17,10 @@ export async function GET(request: Request) {
   let ids: string[] = [];
   try {
     const resp = await axios.get(IDS_API_URL);
-    if (typeof resp.data === 'string') {
-      ids = resp.data
-        .replace(/<br\s*\/?>(\r)?/gi, '\n')
-        .split('\n')
-        .map(id => id.trim())
-        .filter(Boolean);
+    if (Array.isArray(resp.data)) {
+      ids = resp.data.map((id: any) => String(id).trim()).filter(Boolean);
     } else if (Array.isArray(resp.data.ids)) {
-      ids = resp.data.ids;
+      ids = resp.data.ids.map((id: any) => String(id).trim()).filter(Boolean);
     }
     if (ids.length === 0) {
       return NextResponse.json({ error: 'Nenhum ID encontrado na resposta da API de IDs', detalhes: resp.data }, { status: 500 });

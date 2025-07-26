@@ -11,7 +11,7 @@ export async function GET(request: Request) {
   }
 
   // Busca na página de pesquisa do Superflix
-  const url = `${BASE_SUPERFLIX_URL}/pesquisar/?paged=1&search=${encodeURIComponent(query)}`;
+  const url = `${BASE_SUPERFLIX_URL}/pesquisar/?p=1&s=${encodeURIComponent(query)}`;
   let html = '';
   try {
     const resp = await axios.get(url);

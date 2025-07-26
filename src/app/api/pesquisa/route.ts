@@ -38,15 +38,13 @@ export async function GET(request: Request) {
       link = BASE_SUPERFLIX_URL + link;
     }
     // TMDb e IMDb (botões com data-copy)
-    let tmdb = '';
+    
     let imdb_id = '';
     $(el).find('button[data-copy]').each((_, btn) => {
       const val = $(btn).attr('data-copy') || '';
       const btnText = $(btn).text().toLowerCase();
       // TMDb geralmente é só número e tem texto "TMDb copiado!"
-      if (/^\d+$/.test(val) && btnText.includes('tmdb')) {
-        tmdb = val;
-      }
+     
       // IMDb geralmente começa com 'tt' e tem texto "IMDb copiado!"
       if (/^tt\d+$/i.test(val) && btnText.includes('imdb')) {
         imdb_id = val;
@@ -70,7 +68,7 @@ export async function GET(request: Request) {
     else if (link.includes('/dorama/')) tipo = 'Dorama';
     else tipo = 'Desconhecido';
     if (title && link) {
-      resultados.push({ title, ano, tipo, img, link, tmdb, imdb_id, score });
+      resultados.push({ title, ano, tipo, img, link, imdb_id, score });
     }
   });
 

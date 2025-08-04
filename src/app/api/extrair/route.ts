@@ -24,7 +24,7 @@ export async function GET(request: Request) {
 
   let browser: any = null;
   try {
-    browser = await puppeteer.launch({ headless: true });
+    browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
     const page = await browser.newPage();
     // Cria uma página em branco com um iframe apontando para o player
     await page.setContent(`<!DOCTYPE html><html><body><iframe id="playerframe" src="${urlPlayer}" style="width:100vw;height:100vh;"></iframe></body></html>`);

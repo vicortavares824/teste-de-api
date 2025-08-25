@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-export async function GET(req: NextRequest, { params }: { params: { type: string } }) {
-  const { type } = params;
+export async function GET(req: NextRequest, context: any) {
+  const { type } = context.params;
   const searchParams = req.nextUrl.searchParams;
   let targetUrl = '';
   if (type === 'movie') {

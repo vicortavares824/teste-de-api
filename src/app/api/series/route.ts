@@ -28,8 +28,17 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Página não encontrada.' }, { status: 404 });
   }
 
+
   // Filtra para não retornar séries adultas
   let results = Array.isArray(pagina.results) ? pagina.results.filter((serie: any) => !serie.adult) : [];
+
+  // Remove duplicados pelo id
+  const idsUnicos = new Set();
+  results = results.filter((serie: any) => {
+    if (idsUnicos.has(serie.id)) return false;
+    idsUnicos.add(serie.id);
+    return true;
+  });
 
   // Adiciona o campo tmdb
   const resultados = results.map((serie: any) => ({

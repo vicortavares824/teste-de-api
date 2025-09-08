@@ -28,8 +28,17 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Página não encontrada.' }, { status: 404 });
   }
 
+
   // Filtra para não retornar filmes adultos
   let results = Array.isArray(pagina.results) ? pagina.results.filter((filme: any) => !filme.adult) : [];
+
+  // Remove duplicados pelo id
+  const idsUnicos = new Set();
+  results = results.filter((filme: any) => {
+    if (idsUnicos.has(filme.id)) return false;
+    idsUnicos.add(filme.id);
+    return true;
+  });
 
   // Adiciona o campo tmdb
   const resultados = results.map((filme: any) => ({

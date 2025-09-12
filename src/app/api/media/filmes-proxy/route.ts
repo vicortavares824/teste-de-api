@@ -9,22 +9,29 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'ID do filme não informado.' }, { status: 400 });
   }
 
-  // Monta a URL do serviço externo
-  const url = `https://roxanoplay.bb-bet.top/pages/proxy_filmes.php?id=${encodeURIComponent(id)}`;
+  // Monta as URLs dos serviços externos
+  const urls = [
+    `https://roxanoplay.bb-bet.top/pages/proxy_filmes.php?id=${encodeURIComponent(id)}`,
+    `https://embedapi.vercel.app/api/filmes?id=${encodeURIComponent(id)}`
+  ];
 
-  // Faz o proxy da requisição e repassa o conteúdo bruto (stream .mp4 ou json)
-  const response = await fetch(url);
+  let response;
+  for (const url of urls) {
+    response = await fetch(url);
+    if (response.ok) {
+      // Se a resposta for OK, retorna imediatamente
+      const headers = new Headers();
+      response.headers.forEach((value, key) => {
+        headers.set(key, value);
+      });
+      return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+      });
+    }
+  }
 
-  // Copia os headers relevantes
-  const headers = new Headers();
-  response.headers.forEach((value, key) => {
-    headers.set(key, value);
-  });
-
-  // Retorna o stream bruto (pode ser .mp4 ou json)
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers,
-  });
+  // Se nenhuma das URLs funcionou, retorna erro
+  return NextResponse.json({ error: 'Nenhum servidor disponível para este ID.' }, { status: 502 });
 }

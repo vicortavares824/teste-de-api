@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 
 // Lista de URLs base para tentar para séries
 const STREAM_API_URLS = [
@@ -6,8 +6,8 @@ const STREAM_API_URLS = [
   "https://da5f663b4690-skyflixfork.baby-beamup.club/stream/series",
 ]
 
-export async function GET(request: Request, { params }: { params: { params: string[] } }) {
-  const [imdbId, season, episode] = params.params
+export async function GET(request: NextRequest, context: { params: { params: string[] } }) {
+  const [imdbId, season, episode] = context.params.params
 
   if (!imdbId || !season || !episode) {
     return NextResponse.json({ error: "IMDb ID, temporada e episódio são necessários." }, { status: 400 })

@@ -8,9 +8,10 @@ const STREAM_API_URLS = [
 
 export async function GET(request: NextRequest) {
   // Extrai os três últimos segmentos do path
-  const pathParts = request.nextUrl.pathname.split("/")
-  const [imdbId, season, episode] = pathParts.slice(-3)
-
+  const pathParts = request.nextUrl.pathname.split("/");
+  const seriesIndex = pathParts.findIndex(part => part === "series");
+  console.log(seriesIndex);
+  const [imdbId, season, episode] = pathParts.slice(seriesIndex + 1, seriesIndex + 4);
   if (!imdbId || !season || !episode) {
     return NextResponse.json({ error: "IMDb ID, temporada e episódio são necessários." }, { status: 400 })
   }

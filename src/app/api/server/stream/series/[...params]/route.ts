@@ -6,8 +6,10 @@ const STREAM_API_URLS = [
   "https://da5f663b4690-skyflixfork.baby-beamup.club/stream/series",
 ]
 
-export async function GET(request: NextRequest, context: { params: { params: string[] } }) {
-  const [imdbId, season, episode] = context.params.params
+export async function GET(request: NextRequest) {
+  // Extrai os três últimos segmentos do path
+  const pathParts = request.nextUrl.pathname.split("/")
+  const [imdbId, season, episode] = pathParts.slice(-3)
 
   if (!imdbId || !season || !episode) {
     return NextResponse.json({ error: "IMDb ID, temporada e episódio são necessários." }, { status: 400 })

@@ -34,7 +34,7 @@ export async function GET(request: Request) {
         if (found) break;
       }
       if (found && found.video) {
-        return NextResponse.json({ tmdbProxyUrl: found.video });
+        return NextResponse.json({ url_im: found.video });
       } else {
         return NextResponse.json({ error: 'Filme não encontrado no JSON ou sem campo video.' }, { status: 404 });
       }

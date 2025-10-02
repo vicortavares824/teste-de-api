@@ -15,7 +15,9 @@ export async function GET(request: Request) {
   const tipo = (searchParams.get('tipo') || '').toLowerCase(); // 'filme' ou 'serie'
   const season = searchParams.get('season');
   const episode = searchParams.get('episode');
-  if (idParam) {
+  // Busca local por id ou por tmdb+tipo=filme
+  const buscaId = idParam || (tmdbId && tipo === 'filme' ? tmdbId : null);
+  if (buscaId) {
     try {
       const filmesPath = path.resolve(process.cwd(), 'filmes.json');
       const jsonStr = await fs.readFile(filmesPath, 'utf-8');
@@ -24,7 +26,7 @@ export async function GET(request: Request) {
       let found = null;
       for (const page of filmesData.pages || []) {
         for (const result of page.results || []) {
-          if (String(result.id) === String(idParam)) {
+          if (String(result.id) === String(buscaId)) {
             found = result;
             break;
           }

@@ -16,30 +16,76 @@ export async function GET(request: Request) {
   const season = searchParams.get('season');
   const episode = searchParams.get('episode');
   // Busca local por id ou por tmdb+tipo=filme
-  const buscaId = idParam || (tmdbId && tipo === 'filme' ? tmdbId : null);
+  // aceitar tmdb tanto para filmes quanto para series
+  const buscaId = idParam || (tmdbId && (tipo === 'filme' || tipo === 'serie') ? tmdbId : null);
   if (buscaId) {
     try {
+      // 1) tenta filmes.json
       const filmesPath = path.resolve(process.cwd(), 'filmes.json');
-      const jsonStr = await fs.readFile(filmesPath, 'utf-8');
-      const filmesData = JSON.parse(jsonStr);
-      // Procura o filme pelo id (número ou string)
-      let found = null;
+      const filmesStr = await fs.readFile(filmesPath, 'utf-8');
+      const filmesData = JSON.parse(filmesStr);
+      let foundFilm = null;
       for (const page of filmesData.pages || []) {
         for (const result of page.results || []) {
           if (String(result.id) === String(buscaId)) {
-            found = result;
+            foundFilm = result;
             break;
           }
         }
-        if (found) break;
+        if (foundFilm) break;
       }
-      if (found && found.video) {
-        return NextResponse.json({ url_im: found.video });
-      } else {
-        return NextResponse.json({ error: 'Filme não encontrado no JSON ou sem campo video.' }, { status: 404 });
+      if (foundFilm) {
+        if (foundFilm.video) {
+          return NextResponse.json({ url_im: foundFilm.video });
+        }
+        // existe no filmes.json mas sem video
+        return NextResponse.json({ error: 'Filme encontrado mas sem campo video.' }, { status: 404 });
       }
+
+      // 2) tenta series.json
+      const seriesPath = path.resolve(process.cwd(), 'series.json');
+      const seriesStr = await fs.readFile(seriesPath, 'utf-8');
+      const seriesData = JSON.parse(seriesStr);
+      let foundSeries = null;
+      for (const page of seriesData.pages || []) {
+        for (const result of page.results || []) {
+          if (String(result.id) === String(buscaId)) {
+            foundSeries = result;
+            break;
+          }
+        }
+        if (foundSeries) break;
+      }
+      if (foundSeries) {
+        // Transforma campos temporada_1, temporada_2, ... em um objeto seasons com chaves numéricas
+        const seasons: Record<string, Record<string, string>> = {};
+        for (const [k, v] of Object.entries(foundSeries)) {
+          const m = k.match(/temporada[_\- ]?(\d+)/i);
+          if (m && v && typeof v === 'object') {
+            const seasonNum = String(Number(m[1]));
+            seasons[seasonNum] = {};
+            for (const [epKey, epVal] of Object.entries(v as Record<string, any>)) {
+              const em = epKey.match(/(\d+)/);
+              const epNum = em ? String(Number(em[1])) : epKey;
+              if (typeof epVal === 'string') seasons[seasonNum][epNum] = epVal;
+            }
+          }
+        }
+
+        // Remove campos temporada_* e adiciona seasons se encontrar algo
+        let transformed = { ...foundSeries } as any;
+        for (const key of Object.keys(foundSeries)) {
+          if (/^temporada[_\- ]?\d+/i.test(key)) delete transformed[key];
+        }
+        if (Object.keys(seasons).length > 0) transformed.seasons = seasons;
+
+        return NextResponse.json({ series: transformed });
+      }
+
+      return NextResponse.json({ error: 'Item não encontrado no JSON local.' }, { status: 404 });
     } catch (e) {
-      return NextResponse.json({ error: 'Erro ao ler filmes.json.' }, { status: 500 });
+      console.error('[Search] Erro ao ler JSON local:', e);
+      return NextResponse.json({ error: 'Erro ao ler arquivos locais.' }, { status: 500 });
     }
   }
   // ...continua fluxo original abaixo...

@@ -12,12 +12,11 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const idParam = searchParams.get('id');
   const tmdbId = searchParams.get('tmdb');
-  const tipo = (searchParams.get('tipo') || '').toLowerCase(); // 'filme' ou 'serie'
+    const tipo = (searchParams.get('tipo') || '').toLowerCase(); // 'filme' ou 'serie' ou 'anime'
   const season = searchParams.get('season');
   const episode = searchParams.get('episode');
-  // Busca local por id ou por tmdb+tipo=filme
-  // aceitar tmdb tanto para filmes quanto para series
-  const buscaId = idParam || (tmdbId && (tipo === 'filme' || tipo === 'serie') ? tmdbId : null);
+  // Busca local por id (aceita tmdb para filme/serie/anime)
+  const buscaId = idParam || (tmdbId && (tipo === 'filme' || tipo === 'serie' || tipo === 'anime') ? tmdbId : null);
   if (buscaId) {
     try {
       // 1) tenta filmes.json
@@ -42,8 +41,9 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: 'Filme encontrado mas sem campo video.' }, { status: 404 });
       }
 
-      // 2) tenta series.json
-      const seriesPath = path.resolve(process.cwd(), 'series.json');
+  // 2) tenta series.json ou animes.json dependendo do tipo
+  const dataFile = tipo === 'anime' ? 'animes.json' : 'series.json';
+  const seriesPath = path.resolve(process.cwd(), dataFile);
       const seriesStr = await fs.readFile(seriesPath, 'utf-8');
       const seriesData = JSON.parse(seriesStr);
       let foundSeries = null;
@@ -70,6 +70,32 @@ export async function GET(request: Request) {
               if (typeof epVal === 'string') seasons[seasonNum][epNum] = epVal;
             }
           }
+        }
+
+        // Se season+episode foram passados, tenta retornar a URL direta do episódio
+        if (season && episode) {
+          const sNum = String(Number(season));
+          const eNum = String(Number(episode));
+          const epUrl = seasons[sNum]?.[eNum];
+          if (epUrl) {
+            return NextResponse.json({ url_im: epUrl });
+          }
+          // Se não encontrou via seasons, tenta procurar no objeto original por chaves alternativas
+          for (const [k, v] of Object.entries(foundSeries)) {
+            const m = k.match(/temporada[_\- ]?(\d+)/i);
+            if (m && String(Number(m[1])) === sNum && v && typeof v === 'object') {
+              // procurar ep keys como eps_03, ep_3, 03, etc.
+              for (const [epKey, epVal] of Object.entries(v as Record<string, any>)) {
+                const em = epKey.match(/(\d+)/);
+                const epKeyNum = em ? String(Number(em[1])) : epKey;
+                if (epKeyNum === eNum && typeof epVal === 'string') {
+                  return NextResponse.json({ url_im: epVal });
+                }
+              }
+            }
+          }
+          // não encontrou episódio
+          return NextResponse.json({ error: 'Episódio não encontrado.' }, { status: 404 });
         }
 
         // Remove campos temporada_* e adiciona seasons se encontrar algo
@@ -105,15 +131,8 @@ export async function GET(request: Request) {
   if (!tmdbId) {
     return NextResponse.json({ error: 'Parâmetro "tmdb" é obrigatório.', status: 'erro' }, { status: 400 });
   }
-  if (tipo !== 'filme' && tipo !== 'serie') {
-    return NextResponse.json({ error: 'Parâmetro "tipo" deve ser "filme" ou "serie".', status: 'erro' }, { status: 400 });
-  }
-
-  if (!tmdbId) {
-    return NextResponse.json({ error: 'Parâmetro "tmdb" é obrigatório.' }, { status: 400 });
-  }
-  if (tipo !== 'filme' && tipo !== 'serie') {
-    return NextResponse.json({ error: 'Parâmetro "tipo" deve ser "filme" ou "serie".' }, { status: 400 });
+  if (tipo !== 'filme' && tipo !== 'serie' && tipo !== 'anime') {
+    return NextResponse.json({ error: 'Parâmetro "tipo" deve ser "filme", "serie" ou "anime".', status: 'erro' }, { status: 400 });
   }
 
 
@@ -148,6 +167,7 @@ export async function GET(request: Request) {
       }
     }
   } else {
+    // tratar 'serie' e 'anime' como TV na TMDB
     tmdbDetailsUrl = `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${TMDB_API_KEY}&language=pt-BR`;
     const tmdbDetailsRes = await fetch(tmdbDetailsUrl);
     if (!tmdbDetailsRes.ok) {

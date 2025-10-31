@@ -37,6 +37,7 @@ export async function GET(request: Request) {
   // Carrega ids locais de filmes.json e series.json
   let filmesIds = new Set();
   let seriesIds = new Set();
+  let animesIds = new Set();
   try {
     const filmesPath = path.resolve(process.cwd(), 'filmes.json');
     const filmesStr = await fs.readFile(filmesPath, 'utf-8');
@@ -57,18 +58,50 @@ export async function GET(request: Request) {
       }
     }
   } catch {}
+  // carrega ids de animes.json
+  try {
+    const animesPath = path.resolve(process.cwd(), 'animes.json');
+    const animesStr = await fs.readFile(animesPath, 'utf-8');
+    const animesData = JSON.parse(animesStr);
+    for (const page of animesData.pages || []) {
+      for (const result of page.results || []) {
+        animesIds.add(String(result.id));
+      }
+    }
+  } catch {}
+
+  // util: normaliza texto removendo espaços, maiúsculas e acentos
+  const normalize = (s?: string) => {
+    if (!s) return '';
+    try {
+      return s
+        .normalize('NFD')
+        .replace(/\p{Diacritic}/gu, '')
+        .toLowerCase()
+        .replace(/\s+/g, '');
+    } catch (e) {
+      return s.toLowerCase().replace(/\s+/g, '');
+    }
+  };
+  const normQuery = normalize(query || '');
 
   // Carrega todos os objetos dos arquivos locais para busca detalhada
   let filmesEncontrados = [];
   let seriesEncontradas = [];
+  let animesEncontrados = [];
   try {
     const filmesPath = path.resolve(process.cwd(), 'filmes.json');
     const filmesStr = await fs.readFile(filmesPath, 'utf-8');
     const filmesData = JSON.parse(filmesStr);
     for (const page of filmesData.pages || []) {
       for (const result of page.results || []) {
-        if (movieResults.some(f => String(f.id) === String(result.id))) {
-          filmesEncontrados.push(result);
+        // corresponde por id vindo do TMDB
+        const matchesId = movieResults.some(f => String(f.id) === String(result.id));
+        // fallback: corresponde por título local vs query (normalizado)
+        const localTitle = normalize(result.title || result.name || result.original_name);
+        const matchesTitle = normQuery && localTitle.includes(normQuery);
+        if (matchesId || matchesTitle) {
+          filmesEncontrados.push({ ...result, media_type: 'movie', tipo: 'filme' });
         }
       }
     }
@@ -79,8 +112,28 @@ export async function GET(request: Request) {
     const seriesData = JSON.parse(seriesStr);
     for (const page of seriesData.pages || []) {
       for (const result of page.results || []) {
-        if (tvResults.some(s => String(s.id) === String(result.id))) {
-          seriesEncontradas.push(result);
+        const matchesId = tvResults.some(s => String(s.id) === String(result.id));
+        const localTitle = normalize(result.name || result.original_name || result.title);
+        const matchesTitle = normQuery && localTitle.includes(normQuery);
+        if (matchesId || matchesTitle) {
+          seriesEncontradas.push({ ...result, media_type: 'tv', tipo: 'serie' });
+        }
+      }
+    }
+  } catch {}
+
+  // busca em animes.json (muitos animes são retornados como TV no TMDB)
+  try {
+    const animesPath = path.resolve(process.cwd(), 'animes.json');
+    const animesStr = await fs.readFile(animesPath, 'utf-8');
+    const animesData = JSON.parse(animesStr);
+    for (const page of animesData.pages || []) {
+      for (const result of page.results || []) {
+        const matchesId = tvResults.some(s => String(s.id) === String(result.id));
+        const localTitle = normalize(result.name || result.original_name || result.title);
+        const matchesTitle = normQuery && localTitle.includes(normQuery);
+        if (matchesId || matchesTitle) {
+          animesEncontrados.push({ ...result, media_type: 'tv', tipo: 'anime' });
         }
       }
     }
@@ -89,7 +142,9 @@ export async function GET(request: Request) {
   return NextResponse.json({
     filmes: filmesEncontrados,
     series: seriesEncontradas,
+    animes: animesEncontrados,
     total_filmes: filmesEncontrados.length,
-    total_series: seriesEncontradas.length
+    total_series: seriesEncontradas.length,
+    total_animes: animesEncontrados.length
   });
 }

@@ -1,6 +1,6 @@
 export const runtime = 'nodejs';
 
-import { NextResponse } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
 import path from 'path';
 import { promises as fs } from 'fs';
 import { fetchDetails as tmdbFetchDetails } from '../../../../../lib/tmdb';
@@ -426,12 +426,12 @@ const handleAllCategories = async (
 // ============================================================================
 
 export async function GET(
-  request: Request,
-  context: { params?: { type?: string; slug?: string } }
+  request: NextRequest,
+  context: { params: Promise<{ type: string; slug: string }> }
 ) {
   try {
-    // Aguarda params (pode ser Promise no App Router)
-    const params = await (context as any).params;
+    // No App Router, params vem como Promise
+    const params = await context.params;
     const rawType = params?.type || '';
     const slug = params?.slug;
 

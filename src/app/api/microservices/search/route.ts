@@ -56,6 +56,27 @@ export async function GET(request: Request) {
         }
         if (foundSeries) break;
       }
+      
+      // Fallback: se tipo='serie' não encontrou, tenta em animes.json
+      if (!foundSeries && tipo === 'serie') {
+        try {
+          const animesPath = path.resolve(process.cwd(), 'animes.json');
+          const animesStr = await fs.readFile(animesPath, 'utf-8');
+          const animesData = JSON.parse(animesStr);
+          for (const page of animesData.pages || []) {
+            for (const result of page.results || []) {
+              if (String(result.id) === String(buscaId)) {
+                foundSeries = result;
+                break;
+              }
+            }
+            if (foundSeries) break;
+          }
+        } catch (e) {
+          console.warn('[Search] Fallback para animes.json falhou:', e);
+        }
+      }
+      
       if (foundSeries) {
         // Transforma campos temporada_1, temporada_2, ... em um objeto seasons com chaves numéricas
         const seasons: Record<string, Record<string, string>> = {};

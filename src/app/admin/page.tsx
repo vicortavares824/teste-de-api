@@ -215,8 +215,11 @@ export default function AdminPage() {
           `✅ ${activeTab === "filmes" ? "Filme" : activeTab === "series" ? "Série" : "Anime"} adicionado com sucesso!`,
         )
         resetForm()
+      } else if (response.status === 409) {
+        // 409 Conflict = Duplicata
+        setMessage(`⚠️ ${result.message || "Este item já existe no banco de dados!"}`)
       } else {
-        setMessage(`❌ Erro: ${result.error}`)
+        setMessage(`❌ Erro: ${result.error || result.message}`)
       }
     } catch (error) {
       setMessage(`❌ Erro ao enviar: ${error}`)

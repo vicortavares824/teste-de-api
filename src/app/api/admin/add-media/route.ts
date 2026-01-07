@@ -89,11 +89,28 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 4. Adicionar ao JSON (primeira página, primeiro resultado)
+    // 4. Verificar se já existe (por TMDB ID)
     if (!json.pages || !json.pages[0] || !json.pages[0].results) {
       return NextResponse.json(
         { error: 'Estrutura de JSON inválida' },
         { status: 400 }
+      );
+    }
+
+    // Verificar duplicatas em todas as páginas
+    const exists = json.pages.some((page: any) =>
+      page.results.some((item: any) => item.id === newItem.id)
+    );
+
+    if (exists) {
+      const itemName = type === 'filmes' ? data.title : data.name;
+      return NextResponse.json(
+        {
+          error: 'Duplicata',
+          message: `${type === 'filmes' ? 'Filme' : type === 'series' ? 'Série' : 'Anime'} "${itemName}" já existe no banco de dados!`,
+          tmdb_id: newItem.id,
+        },
+        { status: 409 } // 409 Conflict
       );
     }
 

@@ -9,9 +9,12 @@ import { MediaTabs } from "../components/admin/media-tabs"
 import { SearchResults } from "../components/admin/search-results"
 import { MediaForm } from "../components/admin/media-form"
 import { FeedbackMessage } from "../components/admin/feedback-message"
-import { ArrowRightOnRectangleIcon } from '@heroicons/react/24/outline'
+import { MediaList } from "../components/admin/media-list"
+import { MediaEditForm } from "../components/admin/media-edit-form"
+import { ArrowRightOnRectangleIcon, PlusIcon, PencilSquareIcon } from '@heroicons/react/24/outline'
 
 type MediaType = "filmes" | "series" | "animes"
+type ViewMode = "add" | "edit"
 
 interface SearchResult {
   id: number
@@ -48,6 +51,7 @@ interface FormData {
 export default function AdminPage() {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<MediaType>("filmes")
+  const [viewMode, setViewMode] = useState<ViewMode>("edit")
   const [loading, setLoading] = useState(false)
   const [loadingSearch, setLoadingSearch] = useState(false)
   const [loadingTMDB, setLoadingTMDB] = useState(false)
@@ -55,6 +59,7 @@ export default function AdminPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [showResults, setShowResults] = useState(false)
+  const [editingItem, setEditingItem] = useState<any>(null)
 
   const handleLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' })
@@ -113,6 +118,20 @@ export default function AdminPage() {
     resetForm()
     setSearchResults([])
     setShowResults(false)
+    setEditingItem(null)
+  }
+
+  const handleEdit = (item: any) => {
+    setEditingItem(item)
+  }
+
+  const handleCloseEdit = () => {
+    setEditingItem(null)
+  }
+
+  const handleSaveEdit = () => {
+    setMessage("✅ Item atualizado com sucesso!")
+    setEditingItem(null)
   }
 
   const searchByTitle = async () => {
@@ -246,35 +265,78 @@ export default function AdminPage() {
           </button>
         </div>
 
+        {/* View Mode Toggle */}
+        <div className="mb-6 flex gap-2 p-1 bg-zinc-900/50 border border-zinc-800 rounded-xl w-fit">
+          <button
+            onClick={() => setViewMode("edit")}
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-lg font-medium transition-all ${
+              viewMode === "edit"
+                ? "bg-blue-600 text-white shadow-lg"
+                : "text-zinc-400 hover:text-zinc-300"
+            }`}
+          >
+            <PencilSquareIcon className="w-5 h-5" />
+            Editar/Deletar
+          </button>
+          <button
+            onClick={() => setViewMode("add")}
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-lg font-medium transition-all ${
+              viewMode === "add"
+                ? "bg-blue-600 text-white shadow-lg"
+                : "text-zinc-400 hover:text-zinc-300"
+            }`}
+          >
+            <PlusIcon className="w-5 h-5" />
+            Adicionar Novo
+          </button>
+        </div>
+
         {/* Tabs */}
         <MediaTabs activeTab={activeTab} onTabChange={switchTab} />
 
         {/* Feedback Message */}
         {message && <FeedbackMessage message={message} />}
 
-        {/* Search Section */}
-        <SearchBar
-          searchQuery={searchQuery}
-          onSearchQueryChange={setSearchQuery}
-          onSearch={searchByTitle}
-          loadingSearch={loadingSearch}
-          activeTab={activeTab}
-        />
+        {/* View Mode Content */}
+        {viewMode === "edit" ? (
+          <MediaList type={activeTab} onEdit={handleEdit} />
+        ) : (
+          <>
+            {/* Search Section */}
+            <SearchBar
+              searchQuery={searchQuery}
+              onSearchQueryChange={setSearchQuery}
+              onSearch={searchByTitle}
+              loadingSearch={loadingSearch}
+              activeTab={activeTab}
+            />
 
-        {/* Search Results */}
-        {showResults && searchResults.length > 0 && (
-          <SearchResults results={searchResults} onSelectResult={selectResult} loadingTMDB={loadingTMDB} />
+            {/* Search Results */}
+            {showResults && searchResults.length > 0 && (
+              <SearchResults results={searchResults} onSelectResult={selectResult} loadingTMDB={loadingTMDB} />
+            )}
+
+            {/* Form */}
+            {formData.id && (
+              <MediaForm
+                formData={formData}
+                onFormDataChange={setFormData}
+                onSubmit={handleSubmit}
+                activeTab={activeTab}
+                loading={loading}
+                loadingTMDB={loadingTMDB}
+              />
+            )}
+          </>
         )}
 
-        {/* Form */}
-        {formData.id && (
-          <MediaForm
-            formData={formData}
-            onFormDataChange={setFormData}
-            onSubmit={handleSubmit}
-            activeTab={activeTab}
-            loading={loading}
-            loadingTMDB={loadingTMDB}
+        {/* Edit Modal */}
+        {editingItem && (
+          <MediaEditForm
+            item={editingItem}
+            type={activeTab}
+            onClose={handleCloseEdit}
+            onSave={handleSaveEdit}
           />
         )}
       </div>

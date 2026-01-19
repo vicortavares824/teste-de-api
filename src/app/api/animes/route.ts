@@ -22,6 +22,20 @@ async function loadAnimesData(): Promise<AnimesJson> {
   return JSON.parse(txt) as AnimesJson;
 }
 
+function transformUrl(originalUrl: string | undefined) {
+  if (!originalUrl) return originalUrl || '';
+  try {
+    const u = new URL(originalUrl);
+    if (u.pathname.includes('/pages/mov.php') || u.pathname.endsWith('mov.php')) {
+      u.pathname = u.pathname.replace('mov.php', 'hostmov.php');
+      return u.toString();
+    }
+    return originalUrl;
+  } catch (e) {
+    return originalUrl.replace('/pages/mov.php?id=', '/pages/hostmov.php?id=');
+  }
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const page = parseInt(searchParams.get('page') || '1', 10);
@@ -51,10 +65,16 @@ export async function GET(request: Request) {
     tmdb: anime.id != null ? String(anime.id) : ''
   }));
 
+  // Além disso, expor URLvideo com hostmov.php (transformação padrão)
+  const mapped = resultados.map((a: any) => ({
+    ...a,
+    poster_url: a.imagem_capa || a.poster || '',
+    URLvideo: transformUrl(a.url || a.URLvideo || ''),
+  }));
   return NextResponse.json({
     page: pagina.page,
-  totalPaginas: animesData.pages.length,
-  totalResults: animesData.pages.reduce((acc: number, p: any) => acc + (p.results?.length || 0), 0),
-    results: resultados
+    totalPaginas: animesData.pages.length,
+    totalResults: animesData.pages.reduce((acc: number, p: any) => acc + (p.results?.length || 0), 0),
+    results: mapped
   });
 }

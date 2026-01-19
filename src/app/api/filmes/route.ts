@@ -1,55 +1,121 @@
 
 import { NextResponse } from 'next/server';
-import filmesDataRaw from '../../../../filmes.json';
 
-type Filme = {
-  adult: boolean;
-  id: number;
+type ExternalFilme = {
+  id: string;
+  tmdb_id?: string;
+  nome?: string;
+  sinopse?: string;
+  imagem_capa?: string;
+  ano?: string;
+  generos?: string;
+  nota_tmdb?: string;
+  duracao?: string;
+  url?: string;
+  ativo?: string;
   [key: string]: any;
 };
-type Pagina = {
-  page: number;
-  results: Filme[];
-};
-type FilmesJson = {
-  pages: Pagina[];
-};
 
-const filmesData = filmesDataRaw as FilmesJson;
+function transformUrl(originalUrl: string | undefined) {
+  if (!originalUrl) return originalUrl || '';
+  // Substitui mov.php por hostmov.php mantendo o id
+  try {
+    const u = new URL(originalUrl);
+    // Se o pathname contém mov.php, trocamos para hostmov.php
+    if (u.pathname.includes('/pages/mov.php') || u.pathname.endsWith('mov.php')) {
+      u.pathname = u.pathname.replace('mov.php', 'hostmov.php');
+      return u.toString();
+    }
+    return originalUrl;
+  } catch (e) {
+    // Fallback simples
+    return originalUrl.replace('/pages/mov.php?id=', '/pages/hostmov.php?id=');
+  }
+}
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const page = parseInt(searchParams.get('page') || '1', 10);
 
-  // Busca a página correta no JSON
-  const pagina = filmesData.pages.find((p: any) => p.page === page);
+  const externalUrl = `https://roxanoplay.bb-bet.top/api/filmes.php?page=${page}&limit=20`;
 
-  if (!pagina) {
-    return NextResponse.json({ error: 'Página não encontrada.' }, { status: 404 });
+  try {
+    const res = await fetch(externalUrl);
+    if (!res.ok) {
+      return NextResponse.json({ error: 'Erro ao buscar API externa' }, { status: res.status });
+    }
+
+    const data = await res.json();
+    const filmes: ExternalFilme[] = Array.isArray(data.filmes) ? data.filmes : [];
+
+    // Filtrar apenas ativos (se campo existir)
+    let results = filmes.filter((f) => (f.ativo == null ? true : String(f.ativo) === '1'));
+
+    // Remover duplicados por tmdb_id ou id
+    const seen = new Set<string>();
+    results = results.filter((f) => {
+      const key = String(f.tmdb_id || f.id || '');
+      if (!key) return true;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    // Helpers para manipular imagens (extrai caminho e constrói URLs nos tamanhos usados)
+    const extractImagePath = (img: string | undefined) => {
+      if (!img) return ''
+      try {
+        const u = new URL(img)
+        return u.pathname.startsWith('/') ? u.pathname : `/${u.pathname}`
+      } catch (e) {
+        // Se já for apenas o path
+        return img.startsWith('/') ? img : `/${img}`
+      }
+    }
+
+    const buildImageUrl = (path: string, size: 'w500' | 'w1280' | string = 'w500') => {
+      if (!path) return ''
+      // Se path já for uma URL completa, retorna ela
+      if (path.startsWith('http')) return path
+      return `https://image.tmdb.org/t/p/${size}${path}`
+    }
+
+    // Mapear para o formato antigo utilizado pelo projeto
+    const mapped = results.map((f) => {
+      const posterPath = extractImagePath(f.imagem_capa)
+      const posterUrl = buildImageUrl(posterPath, 'w500')
+      const backdropUrl = buildImageUrl(posterPath, 'w1280')
+
+      return {
+        adult: false,
+        backdrop_path: posterPath || '',
+        backdrop_url: backdropUrl || '',
+        genre_ids: [],
+        id: f.tmdb_id ? Number(f.tmdb_id) : Number(f.id),
+        original_language: 'pt',
+        overview: f.sinopse || '',
+        popularity: f.nota_tmdb ? Number(f.nota_tmdb) : 0,
+        poster_path: posterPath || '',
+        poster_url: posterUrl || '',
+        video: transformUrl(f.url),
+        vote_average: f.nota_tmdb ? Number(f.nota_tmdb) : 0,
+        vote_count: 0,
+        original_title: f.nome || '',
+        release_date: f.ano || '',
+        title: f.nome || '',
+        URLvideo: transformUrl(f.url),
+        tmdb: f.tmdb_id ? String(f.tmdb_id) : String(f.id),
+      }
+    })
+
+    return NextResponse.json({
+      page: data.page || page,
+      per_page: data.per_page || mapped.length,
+      total: data.total || mapped.length,
+      total_pages: data.total_pages || 1,
+      results: mapped,
+    });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message || 'Erro desconhecido' }, { status: 500 });
   }
-
-
-  // Filtra para não retornar filmes adultos
-  let results = Array.isArray(pagina.results) ? pagina.results.filter((filme: any) => !filme.adult) : [];
-
-  // Remove duplicados pelo id
-  const idsUnicos = new Set();
-  results = results.filter((filme: any) => {
-    if (idsUnicos.has(filme.id)) return false;
-    idsUnicos.add(filme.id);
-    return true;
-  });
-
-  // Adiciona o campo tmdb
-  const resultados = results.map((filme: any) => ({
-    ...filme,
-    tmdb: filme.id != null ? String(filme.id) : ''
-  }));
-
-  return NextResponse.json({
-    page: pagina.page,
-    totalPaginas: filmesData.pages.length,
-    totalResults: filmesData.pages.reduce((acc: number, p: any) => acc + (p.results?.length || 0), 0),
-    results: resultados
-  });
 }

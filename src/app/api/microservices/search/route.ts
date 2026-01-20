@@ -19,6 +19,18 @@ export async function GET(request: Request) {
   const buscaId = idParam || (tmdbId && (tipo === 'filme' || tipo === 'serie' || tipo === 'anime') ? tmdbId : null);
   if (buscaId) {
     try {
+      // helper: monta URL hostmov.php para filmes
+      const buildHostMovUrl = (id: string) => `https://roxanoplay.bb-bet.top/pages/hostmov.php?id=${id}`;
+      // helper: converte tv.php?id=... para proxys.php?id=...
+      const proxifyEpisodeUrl = (original: string | undefined) => {
+        if (!original) return original || '';
+        try {
+          // substitui /pages/tv.php?id=... por /pages/proxys.php?id=...
+          return original.replace('/pages/tv.php?id=', '/pages/proxys.php?id=');
+        } catch (e) {
+          return original;
+        }
+      };
       // 1) tenta filmes.json
       const filmesPath = path.resolve(process.cwd(), 'filmes.json');
       const filmesStr = await fs.readFile(filmesPath, 'utf-8');
@@ -34,6 +46,12 @@ export async function GET(request: Request) {
         if (foundFilm) break;
       }
       if (foundFilm) {
+        // se pediu tipo=filme, retorne hostmov.php usando id tmdb/id
+        if (tipo === 'filme') {
+          const idForHost = foundFilm.tmdb_id || foundFilm.tmdb || foundFilm.id || buscaId;
+          return NextResponse.json({ url_im: buildHostMovUrl(String(idForHost)) });
+        }
+        // caso contrário, se houver campo video, retorna direto
         if (foundFilm.video) {
           return NextResponse.json({ url_im: foundFilm.video });
         }
@@ -99,7 +117,7 @@ export async function GET(request: Request) {
           const eNum = String(Number(episode));
           const epUrl = seasons[sNum]?.[eNum];
           if (epUrl) {
-            return NextResponse.json({ url_im: epUrl });
+            return NextResponse.json({ url_im: proxifyEpisodeUrl(epUrl) });
           }
           // Se não encontrou via seasons, tenta procurar no objeto original por chaves alternativas
           for (const [k, v] of Object.entries(foundSeries)) {
@@ -110,7 +128,7 @@ export async function GET(request: Request) {
                 const em = epKey.match(/(\d+)/);
                 const epKeyNum = em ? String(Number(em[1])) : epKey;
                 if (epKeyNum === eNum && typeof epVal === 'string') {
-                  return NextResponse.json({ url_im: epVal });
+                  return NextResponse.json({ url_im: proxifyEpisodeUrl(epVal) });
                 }
               }
             }

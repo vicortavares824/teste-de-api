@@ -19,9 +19,35 @@ export async function GET(request: Request) {
   const buscaId = idParam || (tmdbId && (tipo === 'filme' || tipo === 'serie' || tipo === 'anime') ? tmdbId : null);
   if (buscaId) {
     try {
-      // Monta URL direta sem consultar JSONs locais
-      const buildHostMovUrl = (id: string) => `https://roxanoplay.bb-bet.top/pages/hostmov.php?id=${id}`;
-      const buildProxyEpisodeUrl = (id: string, s: string, e: string) => `https://roxanoplay.bb-bet.top/pages/proxys.php?id=${id}/${s}/${e}`;
+      // Use origin da requisição (ou BASE_URL) para criar URL do proxy no mesmo domínio
+      const ORIGIN = request.headers.get('origin') || process.env.BASE_URL || 'https://cinestream-kappa.vercel.app';
+
+      const buildHostMovUrl = (idOrUrl: string) => {
+        // se já for URL completa, proxify direto
+        if (/^https?:\/\//i.test(idOrUrl)) {
+          return `${ORIGIN}/api/proxy?url=${encodeURIComponent(idOrUrl)}`;
+        }
+        const upstream = `https://roxanoplay.bb-bet.top/pages/hostmov.php?id=${encodeURIComponent(idOrUrl)}`;
+        return `${ORIGIN}/api/proxy?url=${encodeURIComponent(upstream)}`;
+      };
+
+      const buildProxyEpisodeUrl = (idOrUrl: string, s: string, e: string) => {
+        if (/^https?:\/\//i.test(idOrUrl)) {
+          // se idOrUrl já é uma URL, tenta converter tv.php para proxys.php
+          try {
+            const u = new URL(idOrUrl);
+            let target = idOrUrl;
+            if (u.pathname.includes('/pages/tv.php') || u.pathname.endsWith('tv.php')) {
+              target = idOrUrl.replace('/pages/tv.php?id=', '/pages/proxys.php?id=');
+            }
+            return `${ORIGIN}/api/proxy?url=${encodeURIComponent(target)}`;
+          } catch (err) {
+            return `${ORIGIN}/api/proxy?url=${encodeURIComponent(idOrUrl)}`;
+          }
+        }
+        const upstream = `https://roxanoplay.bb-bet.top/pages/proxys.php?id=${encodeURIComponent(idOrUrl)}/${encodeURIComponent(s)}/${encodeURIComponent(e)}`;
+        return `${ORIGIN}/api/proxy?url=${encodeURIComponent(upstream)}`;
+      };
 
       if (tipo === 'filme') {
         return NextResponse.json({ url_im: buildHostMovUrl(String(buscaId)) });
@@ -31,7 +57,7 @@ export async function GET(request: Request) {
         if (!season || !episode) {
           return NextResponse.json({ error: 'Parâmetros "season" e "episode" são obrigatórios para series/animes.' }, { status: 400 });
         }
-        return NextResponse.json({ url_im: buildProxyEpisodeUrl(String(buscaId), String(Number(season)), String(Number(episode)))});
+        return NextResponse.json({ url_im: buildProxyEpisodeUrl(String(buscaId), String(Number(season)), String(Number(episode))) });
       }
 
       return NextResponse.json({ error: 'Tipo inválido.' }, { status: 400 });

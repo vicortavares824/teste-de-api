@@ -19,138 +19,25 @@ export async function GET(request: Request) {
   const buscaId = idParam || (tmdbId && (tipo === 'filme' || tipo === 'serie' || tipo === 'anime') ? tmdbId : null);
   if (buscaId) {
     try {
-      // helper: monta URL hostmov.php para filmes
+      // Monta URL direta sem consultar JSONs locais
       const buildHostMovUrl = (id: string) => `https://roxanoplay.bb-bet.top/pages/hostmov.php?id=${id}`;
-      // helper: converte tv.php?id=... para proxys.php?id=...
-      const proxifyEpisodeUrl = (original: string | undefined) => {
-        if (!original) return original || '';
-        try {
-          // substitui /pages/tv.php?id=... por /pages/proxys.php?id=...
-          return original.replace('/pages/tv.php?id=', '/pages/proxys.php?id=');
-        } catch (e) {
-          return original;
-        }
-      };
-      // 1) tenta filmes.json
-      const filmesPath = path.resolve(process.cwd(), 'filmes.json');
-      const filmesStr = await fs.readFile(filmesPath, 'utf-8');
-      const filmesData = JSON.parse(filmesStr);
-      let foundFilm = null;
-      for (const page of filmesData.pages || []) {
-        for (const result of page.results || []) {
-          if (String(result.id) === String(buscaId)) {
-            foundFilm = result;
-            break;
-          }
-        }
-        if (foundFilm) break;
-      }
-      if (foundFilm) {
-        // se pediu tipo=filme, retorne hostmov.php usando id tmdb/id
-        if (tipo === 'filme') {
-          const idForHost = foundFilm.tmdb_id || foundFilm.tmdb || foundFilm.id || buscaId;
-          return NextResponse.json({ url_im: buildHostMovUrl(String(idForHost)) });
-        }
-        // caso contrário, se houver campo video, retorna direto
-        if (foundFilm.video) {
-          return NextResponse.json({ url_im: foundFilm.video });
-        }
-        // existe no filmes.json mas sem video
-        return NextResponse.json({ error: 'Filme encontrado mas sem campo video.' }, { status: 404 });
+      const buildProxyEpisodeUrl = (id: string, s: string, e: string) => `https://roxanoplay.bb-bet.top/pages/proxys.php?id=${id}/${s}/${e}`;
+
+      if (tipo === 'filme') {
+        return NextResponse.json({ url_im: buildHostMovUrl(String(buscaId)) });
       }
 
-  // 2) tenta series.json ou animes.json dependendo do tipo
-  const dataFile = tipo === 'anime' ? 'animes.json' : 'series.json';
-  const seriesPath = path.resolve(process.cwd(), dataFile);
-      const seriesStr = await fs.readFile(seriesPath, 'utf-8');
-      const seriesData = JSON.parse(seriesStr);
-      let foundSeries = null;
-      for (const page of seriesData.pages || []) {
-        for (const result of page.results || []) {
-          if (String(result.id) === String(buscaId)) {
-            foundSeries = result;
-            break;
-          }
+      if (tipo === 'serie' || tipo === 'anime') {
+        if (!season || !episode) {
+          return NextResponse.json({ error: 'Parâmetros "season" e "episode" são obrigatórios para series/animes.' }, { status: 400 });
         }
-        if (foundSeries) break;
-      }
-      
-      // Fallback: se tipo='serie' não encontrou, tenta em animes.json
-      if (!foundSeries && tipo === 'serie') {
-        try {
-          const animesPath = path.resolve(process.cwd(), 'animes.json');
-          const animesStr = await fs.readFile(animesPath, 'utf-8');
-          const animesData = JSON.parse(animesStr);
-          for (const page of animesData.pages || []) {
-            for (const result of page.results || []) {
-              if (String(result.id) === String(buscaId)) {
-                foundSeries = result;
-                break;
-              }
-            }
-            if (foundSeries) break;
-          }
-        } catch (e) {
-          console.warn('[Search] Fallback para animes.json falhou:', e);
-        }
-      }
-      
-      if (foundSeries) {
-        // Transforma campos temporada_1, temporada_2, ... em um objeto seasons com chaves numéricas
-        const seasons: Record<string, Record<string, string>> = {};
-        for (const [k, v] of Object.entries(foundSeries)) {
-          const m = k.match(/temporada[_\- ]?(\d+)/i);
-          if (m && v && typeof v === 'object') {
-            const seasonNum = String(Number(m[1]));
-            seasons[seasonNum] = {};
-            for (const [epKey, epVal] of Object.entries(v as Record<string, any>)) {
-              const em = epKey.match(/(\d+)/);
-              const epNum = em ? String(Number(em[1])) : epKey;
-              if (typeof epVal === 'string') seasons[seasonNum][epNum] = epVal;
-            }
-          }
-        }
-
-        // Se season+episode foram passados, tenta retornar a URL direta do episódio
-        if (season && episode) {
-          const sNum = String(Number(season));
-          const eNum = String(Number(episode));
-          const epUrl = seasons[sNum]?.[eNum];
-          if (epUrl) {
-            return NextResponse.json({ url_im: proxifyEpisodeUrl(epUrl) });
-          }
-          // Se não encontrou via seasons, tenta procurar no objeto original por chaves alternativas
-          for (const [k, v] of Object.entries(foundSeries)) {
-            const m = k.match(/temporada[_\- ]?(\d+)/i);
-            if (m && String(Number(m[1])) === sNum && v && typeof v === 'object') {
-              // procurar ep keys como eps_03, ep_3, 03, etc.
-              for (const [epKey, epVal] of Object.entries(v as Record<string, any>)) {
-                const em = epKey.match(/(\d+)/);
-                const epKeyNum = em ? String(Number(em[1])) : epKey;
-                if (epKeyNum === eNum && typeof epVal === 'string') {
-                  return NextResponse.json({ url_im: proxifyEpisodeUrl(epVal) });
-                }
-              }
-            }
-          }
-          // não encontrou episódio
-          return NextResponse.json({ error: 'Episódio não encontrado.' }, { status: 404 });
-        }
-
-        // Remove campos temporada_* e adiciona seasons se encontrar algo
-        let transformed = { ...foundSeries } as any;
-        for (const key of Object.keys(foundSeries)) {
-          if (/^temporada[_\- ]?\d+/i.test(key)) delete transformed[key];
-        }
-        if (Object.keys(seasons).length > 0) transformed.seasons = seasons;
-
-        return NextResponse.json({ series: transformed });
+        return NextResponse.json({ url_im: buildProxyEpisodeUrl(String(buscaId), String(Number(season)), String(Number(episode)))});
       }
 
-      return NextResponse.json({ error: 'Item não encontrado no JSON local.' }, { status: 404 });
+      return NextResponse.json({ error: 'Tipo inválido.' }, { status: 400 });
     } catch (e) {
-      console.error('[Search] Erro ao ler JSON local:', e);
-      return NextResponse.json({ error: 'Erro ao ler arquivos locais.' }, { status: 500 });
+      console.error('[Search] Erro ao montar URL:', e);
+      return NextResponse.json({ error: 'Erro interno ao montar URL.' }, { status: 500 });
     }
   }
   // ...continua fluxo original abaixo...

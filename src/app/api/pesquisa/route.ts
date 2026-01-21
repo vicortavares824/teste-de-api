@@ -11,140 +11,61 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Parâmetro query é obrigatório e deve ter pelo menos 2 caracteres.' }, { status: 400 });
   }
 
-  // Busca filmes e séries no TMDB
-  const tmdbMovieUrl = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&language=pt-BR&query=${encodeURIComponent(query)}`;
-  const tmdbTvUrl = `https://api.themoviedb.org/3/search/tv?api_key=${TMDB_API_KEY}&language=pt-BR&query=${encodeURIComponent(query)}`;
+  // Busca usando API externa (retorna objetos compatíveis com TMDB-like)
+  const externalSearch = `https://streaming-api-ready-for-render.onrender.com/api/search?q=${encodeURIComponent(query)}`;
 
-  let movieResults = [];
-  let tvResults = [];
+  let externalResults: any[] = [];
   try {
-    const [movieRes, tvRes] = await Promise.all([
-      fetch(tmdbMovieUrl),
-      fetch(tmdbTvUrl)
-    ]);
-    if (movieRes.ok) {
-      const data = await movieRes.json();
-      movieResults = data.results || [];
-    }
-    if (tvRes.ok) {
-      const data = await tvRes.json();
-      tvResults = data.results || [];
+    const res = await fetch(externalSearch);
+    if (!res.ok) {
+      const bodyText = await res.text().catch(() => '');
+      // fallback: continue to local matching below
+      externalResults = [];
+    } else {
+      const data = await res.json().catch(() => null);
+      externalResults = Array.isArray(data?.results) ? data.results : [];
     }
   } catch (e) {
-    return NextResponse.json({ error: 'Erro ao buscar na API TMDB.' }, { status: 502 });
+    externalResults = [];
   }
 
-  // Carrega ids locais de filmes.json e series.json
-  let filmesIds = new Set();
-  let seriesIds = new Set();
-  let animesIds = new Set();
-  try {
-    const filmesPath = path.resolve(process.cwd(), 'filmes.json');
-    const filmesStr = await fs.readFile(filmesPath, 'utf-8');
-    const filmesData = JSON.parse(filmesStr);
-    for (const page of filmesData.pages || []) {
-      for (const result of page.results || []) {
-        filmesIds.add(String(result.id));
-      }
-    }
-  } catch {}
-  try {
-    const seriesPath = path.resolve(process.cwd(), 'series.json');
-    const seriesStr = await fs.readFile(seriesPath, 'utf-8');
-    const seriesData = JSON.parse(seriesStr);
-    for (const page of seriesData.pages || []) {
-      for (const result of page.results || []) {
-        seriesIds.add(String(result.id));
-      }
-    }
-  } catch {}
-  // carrega ids de animes.json
-  try {
-    const animesPath = path.resolve(process.cwd(), 'animes.json');
-    const animesStr = await fs.readFile(animesPath, 'utf-8');
-    const animesData = JSON.parse(animesStr);
-    for (const page of animesData.pages || []) {
-      for (const result of page.results || []) {
-        animesIds.add(String(result.id));
-      }
-    }
-  } catch {}
+  // derive by media type/tipo for local matching
+  const externalMovieResults = externalResults.filter((r: any) => (r.media_type === 'movie') || (r.tipo === 'filme'));
+  const externalTvResults = externalResults.filter((r: any) => (r.media_type === 'tv') || (r.tipo === 'serie'));
+  const externalAnimeResults = externalResults.filter((r: any) => (r.tipo === 'anime') || (r.media_type === 'tv' && String(r.original_language || '').toLowerCase() === 'ja'));
 
-  // util: normaliza texto removendo espaços, maiúsculas e acentos
-  const normalize = (s?: string) => {
-    if (!s) return '';
-    try {
-      return s
-        .normalize('NFD')
-        .replace(/\p{Diacritic}/gu, '')
-        .toLowerCase()
-        .replace(/\s+/g, '');
-    } catch (e) {
-      return s.toLowerCase().replace(/\s+/g, '');
-    }
-  };
-  const normQuery = normalize(query || '');
+  // Mapear e retornar diretamente os resultados da API externa
+  const animeIdSet = new Set(externalAnimeResults.map((r: any) => String(r.id)));
 
-  // Carrega todos os objetos dos arquivos locais para busca detalhada
-  let filmesEncontrados = [];
-  let seriesEncontradas = [];
-  let animesEncontrados = [];
-  try {
-    const filmesPath = path.resolve(process.cwd(), 'filmes.json');
-    const filmesStr = await fs.readFile(filmesPath, 'utf-8');
-    const filmesData = JSON.parse(filmesStr);
-    for (const page of filmesData.pages || []) {
-      for (const result of page.results || []) {
-        // corresponde por id vindo do TMDB
-        const matchesId = movieResults.some(f => String(f.id) === String(result.id));
-        // fallback: corresponde por título local vs query (normalizado)
-        const localTitle = normalize(result.title || result.name || result.original_name);
-        const matchesTitle = normQuery && localTitle.includes(normQuery);
-        if (matchesId || matchesTitle) {
-          filmesEncontrados.push({ ...result, media_type: 'movie', tipo: 'filme' });
-        }
-      }
-    }
-  } catch {}
-  try {
-    const seriesPath = path.resolve(process.cwd(), 'series.json');
-    const seriesStr = await fs.readFile(seriesPath, 'utf-8');
-    const seriesData = JSON.parse(seriesStr);
-    for (const page of seriesData.pages || []) {
-      for (const result of page.results || []) {
-        const matchesId = tvResults.some(s => String(s.id) === String(result.id));
-        const localTitle = normalize(result.name || result.original_name || result.title);
-        const matchesTitle = normQuery && localTitle.includes(normQuery);
-        if (matchesId || matchesTitle) {
-          seriesEncontradas.push({ ...result, media_type: 'tv', tipo: 'serie' });
-        }
-      }
-    }
-  } catch {}
+  const mapMovie = (r: any) => ({
+    ...r,
+    media_type: 'movie',
+    tipo: 'filme',
+    URLvideo: (r.URLvideo || r.video || r.url || r.URL || (r.id ? `https://roxanoplay.bb-bet.top/pages/hostmov.php?id=${r.id}` : ''))?.toString().trim()
+  });
 
-  // busca em animes.json (muitos animes são retornados como TV no TMDB)
-  try {
-    const animesPath = path.resolve(process.cwd(), 'animes.json');
-    const animesStr = await fs.readFile(animesPath, 'utf-8');
-    const animesData = JSON.parse(animesStr);
-    for (const page of animesData.pages || []) {
-      for (const result of page.results || []) {
-        const matchesId = tvResults.some(s => String(s.id) === String(result.id));
-        const localTitle = normalize(result.name || result.original_name || result.title);
-        const matchesTitle = normQuery && localTitle.includes(normQuery);
-        if (matchesId || matchesTitle) {
-          animesEncontrados.push({ ...result, media_type: 'tv', tipo: 'anime' });
-        }
-      }
-    }
-  } catch {}
+  const mapSeries = (r: any) => ({
+    ...r,
+    media_type: 'tv',
+    tipo: 'serie'
+  });
+
+  const mapAnime = (r: any) => ({
+    ...r,
+    media_type: 'tv',
+    tipo: 'anime'
+  });
+
+  const filmes = externalMovieResults.map(mapMovie);
+  const series = externalTvResults.filter((r: any) => !animeIdSet.has(String(r.id))).map(mapSeries);
+  const animes = externalAnimeResults.map(mapAnime);
 
   return NextResponse.json({
-    filmes: filmesEncontrados,
-    series: seriesEncontradas,
-    animes: animesEncontrados,
-    total_filmes: filmesEncontrados.length,
-    total_series: seriesEncontradas.length,
-    total_animes: animesEncontrados.length
+    filmes,
+    series,
+    animes,
+    total_filmes: filmes.length,
+    total_series: series.length,
+    total_animes: animes.length
   });
 }

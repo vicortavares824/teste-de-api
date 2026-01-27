@@ -43,49 +43,53 @@ const TYPE_CONFIG: Record<ContentType, { file: string; mediaType: MediaType; tip
   animes: { file: 'animes.json', mediaType: 'tv', tipo: 'anime' },
 };
 
-const CATEGORIES_BY_TYPE: Record<ContentType, Category[]> = {
-  series: [
-    { title: 'Popular Series', slug: 'popSeries', startIndex: 0 },
-    { title: 'Documentarios', slug: 'documentarios', startIndex: 2 },
-    { title: 'Mistérios Series', slug: 'misterios', startIndex: 6 },
-    { title: 'Classic Series', slug: 'classic', startIndex: 8 },
-  ],
+// As 8 categorias solicitadas (4 filmes + 4 series)
+const CATEGORY_DEFINITIONS: Record<ContentType, Array<{
+  slug: string;
+  title: string;
+  genres: number[];
+  vote_average_gte?: number;
+  vote_count_gte?: number;
+}>> = {
   movies: [
-    { title: 'Filmes Populares', slug: 'popfilmes', startIndex: 0 },
-    { title: 'Terror', slug: 'terror', startIndex: 4 },
-    { title: 'Ação', slug: 'acao', startIndex: 6 },
-    { title: 'Drama', slug: 'drama', startIndex: 2 },
-    { title: 'Fantasia', slug: 'fantasia', startIndex: 8 },
-    { title: 'Clássicos', slug: 'classicos', startIndex: 10 },
+    { slug: 'adrenalina_pura', title: 'Adrenalina Pura', genres: [28, 12], vote_average_gte: 0, vote_count_gte: 0 },
+    { slug: 'quebrando_a_mente', title: 'Quebrando a Mente', genres: [878, 9648], vote_average_gte: 0, vote_count_gte: 0 },
+    { slug: 'noites_de_tensao', title: 'Noites de Tensão', genres: [27, 9648], vote_average_gte: 0, vote_count_gte: 0 },
+    { slug: 'mundos_fantasticos', title: 'Mundos Fantásticos', genres: [16, 12, 878], vote_average_gte: 0, vote_count_gte: 0 },
   ],
-  animes: [
-    { title: 'Animes Populares', slug: 'popanimes', startIndex: 0 },
-    { title: 'Shounen', slug: 'shounen', startIndex: 4 },
-    { title: 'Seinen', slug: 'seinen', startIndex: 2 },
-    { title: 'Fantasia', slug: 'fantasia', startIndex: 6 },
-    { title: 'Clássicos', slug: 'classicos', startIndex: 8 },
+  series: [
+    { slug: 'maratona_epica', title: 'Maratona Épica', genres: [10765, 10759], vote_average_gte: 0, vote_count_gte: 0 },
+    { slug: 'misterios_viciantes', title: 'Mistérios Viciantes', genres: [9648], vote_average_gte: 0, vote_count_gte: 0 },
+    { slug: 'anime_animacao_adulta', title: 'Anime e Animação Adulta', genres: [16], vote_average_gte: 0, vote_count_gte: 0 },
+    { slug: 'terror_seriado', title: 'Terror Seriado', genres: [], vote_average_gte: 0, vote_count_gte: 0 },
   ],
+  animes: [],
 };
 
+// Map de slug -> arquivo JSON específico (quando existir um arquivo com itens dessa categoria)
+const CATEGORY_JSON_FILE: Record<string, string> = {
+  // filmes
+  adrenalina_pura: 'adrenalina_pura.json',
+  quebrando_a_mente: 'quebrando_a_mente.json',
+  noites_de_tensao: 'noites_de_tensao.json',
+  mundos_fantasticos: 'mundos_fantasticos.json',
+  // series
+  maratona_epica: 'maratona_epica.json',
+  misterios_viciantes: 'misterios_viciantes.json',
+  anime_animacao_adulta: 'animacao_adulta.json',
+  terror_seriado: 'terror_seriado.json',
+};
+
+const CATEGORIES_BY_TYPE: Record<ContentType, Category[]> = {
+  series: (CATEGORY_DEFINITIONS.series || []).map((c, i) => ({ title: c.title, slug: c.slug, startIndex: 0 })),
+  movies: (CATEGORY_DEFINITIONS.movies || []).map((c, i) => ({ title: c.title, slug: c.slug, startIndex: 0 })),
+  animes: [],
+};
+
+// Mantemos um map mínimo — a maior parte das categorias vem de CATEGORY_DEFINITIONS
 const TMDB_CATEGORY_MAP: Record<string, TMDBConfig> = {
-  // Series
-  popSeries: { endpoint: 'tv/popular' },
-  documentarios: { endpoint: 'discover/tv', params: { with_genres: '99' } },
-  misterios: { endpoint: 'discover/tv', params: { with_genres: '9648' } },
-  classic: { endpoint: 'discover/tv', params: { sort_by: 'vote_average.desc', 'vote_count.gte': 1000 } },
-  
-  // Movies
-  popfilmes: { endpoint: 'movie/popular' },
-  terror: { endpoint: 'discover/movie', params: { with_genres: '27' } },
-  acao: { endpoint: 'discover/movie', params: { with_genres: '28' } },
-  drama: { endpoint: 'discover/movie', params: { with_genres: '18' } },
-  fantasia: { endpoint: 'discover/movie', params: { with_genres: '14' } },
-  classicos: { endpoint: 'discover/movie', params: { sort_by: 'vote_average.desc', 'vote_count.gte': 1000 } },
-  
-  // Animes
-  popanimes: { endpoint: 'tv/popular' },
-  shounen: { endpoint: 'discover/tv', params: { with_keywords: '210024' } },
-  seinen: { endpoint: 'discover/tv', params: { with_keywords: '210025' } },
+  // entradas de exemplo / fallback
+  pop: { endpoint: 'popular' },
 };
 
 // ============================================================================
@@ -165,32 +169,39 @@ const enrichWithTMDB = async (item: any, mediaType: MediaType) => {
   }
 };
 
-const fetchTMDBCategory = async (slug: string): Promise<any[] | null> => {
-  const config = TMDB_CATEGORY_MAP[slug];
-  if (!config || !TMDB_API_KEY) return null;
+const fetchTMDBCategory = async (slug: string, mediaType: MediaType, genres: number[] = [], page: number = 1): Promise<any[] | null> => {
+  if (!TMDB_API_KEY) return null;
 
-  const cacheKey = `tmdb:${slug}`;
+  const cacheKey = `tmdb:${mediaType}:${slug}:${genres.join(',')}:page:${page}`;
   const cached = getCached<any[]>(cacheKey);
   if (cached) return cached;
 
   try {
-    const url = new URL(`https://api.themoviedb.org/3/${config.endpoint}`);
+    // Se temos gêneros, usamos discover; caso contrário, usamos endpoint /{mediaType}/popular
+    let endpoint = '';
+    const params: Record<string, string | number> = {};
+
+    if (genres && genres.length > 0) {
+      endpoint = `discover/${mediaType}`;
+      params.with_genres = genres.join(',');
+      params.sort_by = 'popularity.desc';
+    } else {
+      endpoint = `${mediaType}/popular`;
+    }
+
+    const url = new URL(`https://api.themoviedb.org/3/${endpoint}`);
     url.searchParams.set('api_key', TMDB_API_KEY);
     url.searchParams.set('language', 'pt-BR');
-    url.searchParams.set('page', '1');
+  url.searchParams.set('page', String(page));
 
-    if (config.params) {
-      Object.entries(config.params).forEach(([key, value]) => {
-        url.searchParams.set(key, String(value));
-      });
-    }
+    Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, String(value)));
 
     const response = await fetch(url.toString());
     if (!response.ok) return null;
 
     const data = await response.json();
     const results = data.results || [];
-    
+
     setCache(cacheKey, results);
     return results;
   } catch (error) {
@@ -199,19 +210,24 @@ const fetchTMDBCategory = async (slug: string): Promise<any[] | null> => {
   }
 };
 
-const getGenreIdsFromTMDBConfig = (slug: string): number[] => {
+const getGenreIdsFromTMDBConfig = (slug: string, type: ContentType): number[] => {
+  // Primeiro tenta ler da definição de categoria fornecida
+  const def = (CATEGORY_DEFINITIONS as any)[type]?.find((c: any) => c.slug === slug);
+  if (def && Array.isArray(def.genres) && def.genres.length > 0) return def.genres.map(Number).filter(n => !isNaN(n));
+
+  // Fallback para configurações estáticas
   const config = TMDB_CATEGORY_MAP[slug];
   if (!config?.params?.with_genres) return [];
-  
   const genres = String(config.params.with_genres);
   return genres.split(',').map(g => Number(g.trim())).filter(g => !isNaN(g));
 };
 
 const itemMatchesGenres = (item: any, genreIds: number[]): boolean => {
   if (!genreIds.length) return false;
-  if (!item.genre_ids || !Array.isArray(item.genre_ids)) return false;
-  
-  return item.genre_ids.some((gid: number) => genreIds.includes(Number(gid)));
+  // TMDB pode expor 'genre_ids' (lista de ids) ou 'genres' (lista de objetos)
+  if (Array.isArray(item.genre_ids)) return item.genre_ids.some((gid: number) => genreIds.includes(Number(gid)));
+  if (Array.isArray(item.genres)) return item.genres.some((g: any) => genreIds.includes(Number(g?.id)));
+  return false;
 };
 
 const fillWithLocalItems = (
@@ -243,8 +259,10 @@ const fillWithLocalItems = (
     addedIds.add(nid);
   }
 
-  // Extrair genre_ids da configuração TMDB
-  const targetGenres = getGenreIdsFromTMDBConfig(slug);
+  // Extrair genre_ids da definição de categoria
+  // tentaremos inferir type a partir do category encontrado
+  const inferredType: ContentType = (category && CATEGORY_DEFINITIONS.movies.find(c => c.slug === slug)) ? 'movies' : 'series';
+  const targetGenres = getGenreIdsFromTMDBConfig(slug, inferredType);
 
   // Filtrar itens locais que correspondem aos gêneros da categoria e que tenham id numérico
   const matchingItems = targetGenres.length > 0
@@ -328,7 +346,8 @@ const handleSingleCategory = async (
   type: ContentType,
   slug: string,
   count: number,
-  localData: any[]
+  localData: any[],
+  page: number = 1
 ): Promise<NextResponse> => {
   const categories = CATEGORIES_BY_TYPE[type];
   const category = categories.find(c => c.slug === slug);
@@ -341,14 +360,33 @@ const handleSingleCategory = async (
   }
 
   const { mediaType, tipo } = TYPE_CONFIG[type];
+  // Priorizar arquivo JSON específico se existir
+  const jsonFile = CATEGORY_JSON_FILE[slug];
+  if (jsonFile) {
+    const loaded = await loadLocalData(jsonFile).catch(() => []);
+    const offset = Math.max(0, (page - 1) * count);
+    const sliced = (Array.isArray(loaded) ? loaded.slice(offset, offset + count) : []);
+    const items = await processCategoryItems(sliced, mediaType, tipo);
 
-  // Tentar buscar do TMDB primeiro
-  const tmdbResults = await fetchTMDBCategory(slug);
-  
+    return NextResponse.json({
+      title: category.title,
+      slug: category.slug,
+      requestedCount: count,
+      page,
+      total: items.length,
+      items,
+    });
+  }
+
+  // Tentar buscar do TMDB (usando gêneros da definição, quando houver)
+  const def = (CATEGORY_DEFINITIONS as any)[type]?.find((c: any) => c.slug === slug);
+  const genres = def && Array.isArray(def.genres) ? def.genres : [];
+  const tmdbResults = await fetchTMDBCategory(slug, mediaType, genres as number[], page);
+
   if (tmdbResults && tmdbResults.length > 0) {
     const tmdbIds = new Set(tmdbResults.map(r => Number(r.id)));
     const filteredLocal = localData.filter(item => tmdbIds.has(Number(item.id)));
-    
+
     // Manter ordem do TMDB e mapear para itens locais
     const orderedItems = tmdbResults
       .map(r => filteredLocal.find(f => Number(f.id) === Number(r.id)))
@@ -366,14 +404,15 @@ const handleSingleCategory = async (
       title: category.title,
       slug: category.slug,
       requestedCount: count,
+      page,
       total: items.length,
       items,
     });
   }
 
   // Fallback para dados locais
-  const start = Math.max(0, category.startIndex);
-  const slicedItems = localData.slice(start, start + count);
+  const offset = Math.max(0, (page - 1) * count);
+  const slicedItems = localData.slice(offset, offset + count);
   const items = await processCategoryItems(slicedItems, mediaType, tipo);
 
   if (items.length < count) {
@@ -384,6 +423,7 @@ const handleSingleCategory = async (
     title: category.title,
     slug: category.slug,
     requestedCount: count,
+    page,
     total: items.length,
     items,
   });
@@ -392,16 +432,50 @@ const handleSingleCategory = async (
 const handleAllCategories = async (
   type: ContentType,
   count: number,
-  localData: any[]
+  localData: any[],
+  page: number = 1
 ): Promise<NextResponse> => {
   const categories = CATEGORIES_BY_TYPE[type];
   const { mediaType, tipo } = TYPE_CONFIG[type];
 
   const allCategories = await Promise.all(
     categories.map(async category => {
-      const start = Math.max(0, category.startIndex);
-      const slicedItems = localData.slice(start, start + count);
-      const items = await processCategoryItems(slicedItems, mediaType, tipo);
+      // Tentar carregar arquivo JSON específico para a categoria
+      const jsonFile = CATEGORY_JSON_FILE[category.slug];
+      let sourceItems: any[] = [];
+
+      if (jsonFile) {
+        const loaded = await loadLocalData(jsonFile).catch(() => []);
+        if (Array.isArray(loaded) && loaded.length > 0) {
+          const offset = Math.max(0, (page - 1) * count);
+          sourceItems = loaded.slice(offset, offset + count);
+        }
+      }
+
+      // Se não há arquivo específico, tentar TMDB discover com géneros da definição
+      if (sourceItems.length === 0) {
+        const def = (CATEGORY_DEFINITIONS as any)[type]?.find((c: any) => c.slug === category.slug);
+        const genres = def && Array.isArray(def.genres) ? def.genres : [];
+  const tmdbResults = await fetchTMDBCategory(category.slug, mediaType, genres as number[], page);
+
+        if (tmdbResults && tmdbResults.length > 0) {
+          // mapear para itens locais quando possível
+          const tmdbIds = new Set(tmdbResults.map((r: any) => Number(r.id)));
+          const filteredLocal = localData.filter(item => tmdbIds.has(Number(item.id)));
+          const orderedItems = tmdbResults
+            .map((r: any) => filteredLocal.find((f: any) => Number(f.id) === Number(r.id)))
+            .filter(Boolean);
+          sourceItems = fillWithLocalItems(orderedItems, localData, category, category.slug, count);
+        }
+      }
+
+      // Fallback: usar slice local
+      if (sourceItems.length === 0) {
+        const offset = Math.max(0, (page - 1) * count);
+        sourceItems = localData.slice(offset, offset + count);
+      }
+
+      const items = await processCategoryItems(sourceItems, mediaType, tipo);
 
       if (items.length < count) {
         console.warn(`[api/categorias] Menos itens locais para categoria ${category.slug}: solicitado=${count}, retornado=${items.length}`);
@@ -412,6 +486,7 @@ const handleAllCategories = async (
         slug: category.slug,
         startIndex: category.startIndex,
         requestedCount: count,
+        page,
         total: items.length,
         items,
       };
@@ -449,12 +524,15 @@ export async function GET(
       );
     }
 
+
     // Parse do count
     const { searchParams } = new URL(request.url);
     const countParam = Number(searchParams.get('count'));
+  const pageParam = Number(searchParams.get('page'));
     const count = Number.isFinite(countParam) && countParam > 0
       ? Math.min(MAX_COUNT, Math.floor(countParam))
       : DEFAULT_COUNT;
+  const page = Number.isFinite(pageParam) && pageParam > 0 ? Math.floor(pageParam) : 1;
 
     // Carrega dados locais
     const { file } = TYPE_CONFIG[type];
@@ -469,10 +547,10 @@ export async function GET(
 
     // Processar requisição
     if (slug) {
-      return handleSingleCategory(type, slug, count, localData);
+      return handleSingleCategory(type, slug, count, localData, page);
     }
 
-    return handleAllCategories(type, count, localData);
+    return handleAllCategories(type, count, localData, page);
   } catch (error) {
     console.error('[api/categorias] Erro não tratado:', error);
     return NextResponse.json(

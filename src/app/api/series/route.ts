@@ -156,7 +156,10 @@ export async function GET(request: Request) {
   name: detail.nome || detail.title || detail.name || item?.name || item?.title || '',
         original_name: detail.original_name || detail.original_title || '',
         first_air_date: detail.first_air_date || detail.ano || '',
-        genre_ids: Array.isArray(detail.genre_ids) ? detail.genre_ids : (detail.generos ? String(detail.generos).split(',').map((g: string) => g.trim()) : []),
+        // convert genre ids or names into an array of genre names when possible
+        genre_ids: Array.isArray(detail.genre_ids)
+          ? detail.genre_ids.map((g: any) => (g && typeof g === 'object' && g.name ? String(g.name) : String(g)))
+          : (detail.generos ? String(detail.generos).split(',').map((g: string) => g.trim()) : []),
         original_language: detail.original_language || 'pt',
         poster_path: posterUrl || '',
         backdrop_path: backdropUrl || '',
@@ -172,7 +175,8 @@ export async function GET(request: Request) {
             mappedObj.original_name = mappedObj.original_name || tmdbData.original_name || tmdbData.original_title || mappedObj.original_name;
             mappedObj.first_air_date = mappedObj.first_air_date || tmdbData.first_air_date || tmdbData.release_date || mappedObj.first_air_date;
             if (!Array.isArray(mappedObj.genre_ids) || mappedObj.genre_ids.length === 0) {
-              mappedObj.genre_ids = tmdbData.genres ? tmdbData.genres.map((g: any) => g.id) : mappedObj.genre_ids;
+              // replace numeric ids with genre names from TMDB
+              mappedObj.genre_ids = tmdbData.genres ? tmdbData.genres.map((g: any) => String(g.name)) : mappedObj.genre_ids;
             }
             mappedObj.poster_path = mappedObj.poster_path || (tmdbData.poster_path ? `https://image.tmdb.org/t/p/w500${tmdbData.poster_path}` : mappedObj.poster_path);
             mappedObj.backdrop_path = mappedObj.backdrop_path || (tmdbData.backdrop_path ? `https://image.tmdb.org/t/p/w1280${tmdbData.backdrop_path}` : mappedObj.backdrop_path);

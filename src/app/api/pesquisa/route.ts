@@ -4,6 +4,27 @@ import { promises as fs } from 'fs';
 
 const TMDB_API_KEY = process.env.TMDB_API_KEY || '60b55db2a598d09f914411a36840d1cb';
 
+const DEFAULT_LOCAL_LIMIT = 50;
+
+const loadLocalData = async (file: string): Promise<any[]> => {
+  try {
+    const filePath = path.resolve(process.cwd(), file);
+    const content = await fs.readFile(filePath, 'utf-8');
+    const data = JSON.parse(content);
+
+    // Alguns arquivos neste repo usam { pages: [ { results: [...] } ] }
+    if (Array.isArray(data)) return data;
+    const items: any[] = [];
+    for (const page of data.pages || []) {
+      items.push(...(page.results || []));
+    }
+    return items;
+  } catch (error) {
+    console.warn(`[loadLocalData] Falha ao carregar ${file}:`, error);
+    return [];
+  }
+};
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const query = searchParams.get('query');
@@ -15,11 +36,26 @@ export async function GET(request: Request) {
   const externalSearch = `https://streaming-api-ready-for-render.onrender.com/api/search?q=${encodeURIComponent(query)}`;
 
   let externalResults: any[] = [];
+  // Carregar e buscar nos JSONs locais (filmes.json, series.json) primeiro
+  const [localMovies, localSeries] = await Promise.all([
+    loadLocalData('filmes.json'),
+    loadLocalData('series.json'),
+  ]);
+
+  const q = String(query).toLowerCase().trim();
+  const matchLocal = (item: any) => {
+    if (!item) return false;
+    const fields = [item.title, item.name, item.original_title, item.overview, item.original_name];
+    return fields.some(f => typeof f === 'string' && f.toLowerCase().includes(q));
+  };
+
+  const localMovieMatches = localMovies.filter(matchLocal).slice(0, DEFAULT_LOCAL_LIMIT);
+  const localSeriesMatches = localSeries.filter(matchLocal).slice(0, DEFAULT_LOCAL_LIMIT);
+
+  // Agora busca na API externa e filtra apenas resultados que não existem nos JSONs locais
   try {
     const res = await fetch(externalSearch);
     if (!res.ok) {
-      const bodyText = await res.text().catch(() => '');
-      // fallback: continue to local matching below
       externalResults = [];
     } else {
       const data = await res.json().catch(() => null);
@@ -56,9 +92,59 @@ export async function GET(request: Request) {
     tipo: 'anime'
   });
 
-  const filmes = externalMovieResults.map(mapMovie);
-  const series = externalTvResults.filter((r: any) => !animeIdSet.has(String(r.id))).map(mapSeries);
+  // Mapear resultados externos
+  const filmesExternal = externalMovieResults.map(mapMovie);
+  const seriesExternal = externalTvResults.filter((r: any) => !animeIdSet.has(String(r.id))).map(mapSeries);
   const animes = externalAnimeResults.map(mapAnime);
+
+  // Mapear resultados locais
+  const mapLocalMovie = (it: any) => ({
+    ...it,
+    media_type: 'movie',
+    tipo: 'filme',
+    URLvideo: (it.URLvideo || it.video || it.url || it.URL || '')?.toString().trim(),
+  });
+
+  const mapLocalSeries = (it: any) => ({
+    ...it,
+    media_type: 'tv',
+    tipo: 'serie',
+  });
+
+  const filmesLocal = localMovieMatches.map(mapLocalMovie);
+  const seriesLocal = localSeriesMatches.map(mapLocalSeries);
+
+  // Conjuntos para deduplicação (ids e títulos normalizados) a partir dos locais
+  const localIdSet = new Set<string>([
+    ...filmesLocal.map((i: any) => String(i.id)),
+    ...seriesLocal.map((i: any) => String(i.id)),
+  ].filter(Boolean));
+  const normalize = (s: string) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '').trim();
+  const localTitleSet = new Set<string>([
+    ...filmesLocal.map((i: any) => normalize(i.title || i.name)),
+    ...seriesLocal.map((i: any) => normalize(i.title || i.name || i.original_name)),
+  ].filter(Boolean));
+
+  // Filtrar externos removendo duplicados com os locais (por id ou title)
+  const filmesExternalFiltered = filmesExternal.filter((it: any) => {
+    const id = String(it.id || '');
+    if (id && localIdSet.has(id)) return false;
+    const t = normalize(it.title || it.name || it.original_title || it.original_name || '');
+    if (t && localTitleSet.has(t)) return false;
+    return true;
+  });
+
+  const seriesExternalFiltered = seriesExternal.filter((it: any) => {
+    const id = String(it.id || '');
+    if (id && localIdSet.has(id)) return false;
+    const t = normalize(it.title || it.name || it.original_title || it.original_name || '');
+    if (t && localTitleSet.has(t)) return false;
+    return true;
+  });
+
+  // Combinar: locais primeiro, depois externos filtrados
+  const filmes = [...filmesLocal, ...filmesExternalFiltered];
+  const series = [...seriesLocal, ...seriesExternalFiltered];
 
   return NextResponse.json({
     filmes,
@@ -66,6 +152,11 @@ export async function GET(request: Request) {
     animes,
     total_filmes: filmes.length,
     total_series: series.length,
-    total_animes: animes.length
+    total_animes: animes.length,
+    source: {
+      external_count: externalResults.length,
+      local_movies: localMovieMatches.length,
+      local_series: localSeriesMatches.length,
+    }
   });
 }

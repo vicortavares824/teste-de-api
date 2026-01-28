@@ -10,7 +10,7 @@ const EXTERNAL_FETCH_TIMEOUT = Number(process.env.SEARCH_EXTERNAL_TIMEOUT_MS) ||
 
 const externalCache = new Map<string, { data: any[]; ts: number }>();
 
-// ============= FUNÇÕES DE BUSCA MELHORADAS =============
+// ============= FUNÇÕES DE BUSCA =============
 
 /**
  * Normaliza string removendo acentos e caracteres especiais
@@ -26,7 +26,7 @@ const normalize = (s: string): string => {
 };
 
 /**
- * Calcula score de relevância entre query e texto (0-100)
+ * Calcula score de relevância (0-100)
  */
 const calculateRelevanceScore = (query: string, text: string): number => {
   if (!text) return 0;
@@ -58,7 +58,7 @@ const calculateRelevanceScore = (query: string, text: string): number => {
 };
 
 /**
- * Calcula similaridade usando Levenshtein (0-1)
+ * Calcula similaridade Levenshtein (0-1)
  */
 const calculateStringSimilarity = (s1: string, s2: string): number => {
   const len1 = s1.length;
@@ -91,7 +91,7 @@ const calculateStringSimilarity = (s1: string, s2: string): number => {
 };
 
 /**
- * Detecta o tipo de série (com temporadas ou simples)
+ * Detecta tipo de série
  */
 const detectSeriesType = (item: any): 'seasons' | 'simple' => {
   const hasSeasons = Object.keys(item).some(key => 
@@ -101,7 +101,7 @@ const detectSeriesType = (item: any): 'seasons' | 'simple' => {
 };
 
 /**
- * Calcula score total de um item baseado em múltiplos campos
+ * Calcula score total
  */
 const calculateItemScore = (item: any, query: string): number => {
   const fields = [
@@ -126,7 +126,7 @@ const calculateItemScore = (item: any, query: string): number => {
 };
 
 /**
- * Filtra e ordena resultados por relevância
+ * Filtra por relevância
  */
 const filterByRelevance = (items: any[], query: string, minScore: number = 20): any[] => {
   return items
@@ -140,7 +140,7 @@ const filterByRelevance = (items: any[], query: string, minScore: number = 20): 
 };
 
 /**
- * Enriquece item de série com informações de episódios
+ * Enriquece série com info de episódios
  */
 const enrichSeriesData = (item: any): any => {
   const seriesType = detectSeriesType(item);
@@ -173,58 +173,45 @@ const enrichSeriesData = (item: any): any => {
 };
 
 /**
- * ⭐ DEDUPLICAÇÃO AVANÇADA
- * Remove duplicatas comparando: ID, título normalizado, poster, URL do vídeo
+ * ⭐ DEDUPLICAÇÃO SUPER SIMPLES E RÁPIDA
+ * Remove por ID primeiro, depois por título normalizado
  */
-const deduplicateItems = (items: any[]): any[] => {
-  const seen = new Map<string, any>();
-  
-  items.forEach(item => {
-    // Criar chaves únicas para identificar duplicatas
-    const id = String(item.id || item.tmdb || '');
-    const normalizedTitle = normalize(item.title || item.name || item.original_title || item.original_name || '');
-    const posterKey = (item.poster_path || item.poster_url || '').replace(/\/t\/p\/w\d+\/|\/t\/p\/w\d+\//g, '');
-    const videoKey = (item.URLvideo || item.video || item.url || '').replace(/\?.*$/, ''); // Remove query params
-    
-    // Tentar encontrar duplicata por ID primeiro (mais confiável)
-    if (id) {
-      if (seen.has(`id:${id}`)) {
-        return; // Skip - já existe com este ID
-      }
-      seen.set(`id:${id}`, item);
-    }
-    
-    // Se não tem ID, tentar por título + poster
-    if (normalizedTitle && posterKey) {
-      const key = `title:${normalizedTitle}:${posterKey}`;
-      if (seen.has(key)) {
-        return; // Skip - já existe com este título e poster
-      }
-      seen.set(key, item);
-    }
-    
-    // Se não tem poster, tentar por título + vídeo URL
-    if (normalizedTitle && videoKey) {
-      const key = `video:${normalizedTitle}:${videoKey}`;
-      if (seen.has(key)) {
-        return; // Skip - já existe com este título e vídeo
-      }
-      seen.set(key, item);
-    }
-    
-    // Se só tem título
-    if (normalizedTitle) {
-      const key = `title:${normalizedTitle}`;
-      if (!seen.has(key)) {
-        seen.set(key, item);
-      }
-    }
-  });
+const deduplicateByIdAndTitle = (items: any[]): any[] => {
+  const seenIds = new Set<string>();
+  const seenTitles = new Map<string, any>();
+  const result: any[] = [];
 
-  return Array.from(seen.values());
+  for (const item of items) {
+    // Prioridade 1: Remover por ID
+    const id = String(item.id || item.tmdb || '').trim();
+    if (id && id !== '0' && id !== '') {
+      if (seenIds.has(id)) {
+        continue; // Skip duplicata
+      }
+      seenIds.add(id);
+      result.push(item);
+      continue;
+    }
+
+    // Prioridade 2: Remover por título normalizado (sem ID)
+    const title = normalize(item.title || item.name || item.original_title || item.original_name || '');
+    if (title) {
+      if (seenTitles.has(title)) {
+        continue; // Skip duplicata
+      }
+      seenTitles.set(title, item);
+      result.push(item);
+      continue;
+    }
+
+    // Se não tem ID nem título, manter mesmo assim
+    result.push(item);
+  }
+
+  return result;
 };
 
-// ============= FIM FUNÇÕES MELHORADAS =============
+// ============= FIM FUNÇÕES =============
 
 const loadLocalData = async (file: string): Promise<any[]> => {
   try {
@@ -304,10 +291,10 @@ export async function GET(request: Request) {
     loadLocalData('series.json'),
   ]);
 
-  // Enriquecer dados de séries
+  // Enriquecer séries
   const enrichedLocalSeries = localSeries.map(enrichSeriesData);
 
-  // Aplicar filtro de relevância
+  // Filtrar por relevância
   const localMovieMatches = filterByRelevance(localMovies, query, minRelevanceScore).slice(
     0,
     DEFAULT_LOCAL_LIMIT
@@ -317,7 +304,7 @@ export async function GET(request: Request) {
     DEFAULT_LOCAL_LIMIT
   );
 
-  // Separar externos por tipo
+  // Separar externos
   const externalMovieResults = externalResults.filter(
     (r: any) => r.media_type === 'movie' || r.tipo === 'filme'
   );
@@ -330,7 +317,7 @@ export async function GET(request: Request) {
 
   const animeIdSet = new Set(externalAnimeResults.map((r: any) => String(r.id)));
 
-  // Mapear itens
+  // Mapear
   const mapMovie = (r: any) => ({
     ...r,
     media_type: 'movie',
@@ -352,13 +339,11 @@ export async function GET(request: Request) {
       media_type: 'tv',
       tipo: 'serie',
     };
-
     if (r._seriesType) {
       mapped._seriesType = r._seriesType;
       mapped._totalSeasons = r._totalSeasons;
       mapped._totalEpisodes = r._totalEpisodes;
     }
-
     return mapped;
   };
 
@@ -368,14 +353,13 @@ export async function GET(request: Request) {
     tipo: 'anime',
   });
 
-  // Mapear filmes externos
+  // Mapear externos
   const filmesExternal = filterByRelevance(
     externalMovieResults.map(mapMovie),
     query,
     minRelevanceScore
   );
 
-  // Mapear séries externas
   const enrichedExternalSeries = externalTvResults.map(enrichSeriesData);
   const seriesExternal = filterByRelevance(
     enrichedExternalSeries
@@ -385,14 +369,13 @@ export async function GET(request: Request) {
     minRelevanceScore
   );
 
-  // Mapear animes
   const animes = filterByRelevance(
     externalAnimeResults.map(mapAnime),
     query,
     minRelevanceScore
   );
 
-  // Mapear filmes locais
+  // Mapear locais
   const mapLocalMovie = (it: any) => ({
     ...it,
     media_type: 'movie',
@@ -414,7 +397,7 @@ export async function GET(request: Request) {
   const filmesLocal = localMovieMatches.map(mapLocalMovie);
   const seriesLocal = localSeriesMatches.map(mapLocalSeries);
 
-  // Flags de controle
+  // Controle
   const preferLocal = !!searchParams.get('preferLocal');
   const externalOnly = !!searchParams.get('externalOnly');
 
@@ -422,16 +405,17 @@ export async function GET(request: Request) {
     if (externalFetchPromise) void externalFetchPromise;
     const external_url = `${new URL(request.url).origin}/api/pesquisa?query=${encodeURIComponent(query)}&externalOnly=1`;
     
-    // ⭐ Deduplicate before returning
-    const deduplicatedFilmes = deduplicateItems(filmesLocal);
-    const deduplicatedSeries = deduplicateItems(seriesLocal);
+    // ⭐ Deduplicar
+    const dedup = deduplicateByIdAndTitle([...filmesLocal, ...seriesLocal]);
+    const filmes = dedup.filter((i: any) => i.media_type === 'movie');
+    const series = dedup.filter((i: any) => i.media_type === 'tv');
     
     return NextResponse.json({
-      filmes: deduplicatedFilmes,
-      series: deduplicatedSeries,
+      filmes,
+      series,
       animes: [],
-      total_filmes: deduplicatedFilmes.length,
-      total_series: deduplicatedSeries.length,
+      total_filmes: filmes.length,
+      total_series: series.length,
       total_animes: 0,
       source: {
         external_fetch_started: !!externalFetchPromise,
@@ -469,28 +453,24 @@ export async function GET(request: Request) {
       ...seriesLocal.map((i: any) => String(i.id)),
     ].filter(Boolean));
 
-    const filmesExternalFiltered = extMovieResults.filter((it: any) => {
+    // ⭐ Deduplicar e remover locais
+    const allExternal = [...extMovieResults, ...extSeriesResults];
+    let dedup = deduplicateByIdAndTitle(allExternal);
+    dedup = dedup.filter((it: any) => {
       const id = String(it.id || '');
       return !(id && localIdSet.has(id));
     });
 
-    const seriesExternalFiltered = extSeriesResults.filter((it: any) => {
-      const id = String(it.id || '');
-      return !(id && localIdSet.has(id));
-    });
-
-    // ⭐ Deduplicate
-    const deduplicatedFilmes = deduplicateItems(filmesExternalFiltered);
-    const deduplicatedSeries = deduplicateItems(seriesExternalFiltered);
-    const deduplicatedAnimes = deduplicateItems(animes);
+    const filmes = dedup.filter((i: any) => i.media_type === 'movie');
+    const series = dedup.filter((i: any) => i.media_type === 'tv');
 
     return NextResponse.json({
-      filmes: deduplicatedFilmes,
-      series: deduplicatedSeries,
-      animes: deduplicatedAnimes,
-      total_filmes: deduplicatedFilmes.length,
-      total_series: deduplicatedSeries.length,
-      total_animes: deduplicatedAnimes.length,
+      filmes,
+      series,
+      animes: deduplicateByIdAndTitle(animes),
+      total_filmes: filmes.length,
+      total_series: series.length,
+      total_animes: animes.length,
       source: {
         external_count: externalResults.length,
         local_movies: filmesLocal.length,
@@ -500,90 +480,61 @@ export async function GET(request: Request) {
     });
   }
 
-  // Deduplicação principal
-  const deduplicatedFilmesExternal = deduplicateItems(filmesExternal);
-  const deduplicatedSeriesExternal = deduplicateItems(seriesExternal);
-  const deduplicatedAnimes = deduplicateItems(animes);
+  // Caso padrão: local + externo
+  let allResults = [...filmesLocal, ...seriesLocal, ...filmesExternal, ...seriesExternal, ...animes];
+  
+  // ⭐ DEDUPLICAÇÃO PRINCIPAL
+  allResults = deduplicateByIdAndTitle(allResults);
 
-  // Deduplicação local
-  const deduplicatedFilmesLocal = deduplicateItems(filmesLocal);
-  const deduplicatedSeriesLocal = deduplicateItems(seriesLocal);
+  // Separar tipos
+  const filmes = allResults.filter((i: any) => i.media_type === 'movie');
+  const series = allResults.filter((i: any) => i.media_type === 'tv' && i.tipo === 'serie');
+  const dedupAnimes = allResults.filter((i: any) => i.tipo === 'anime');
 
-  // Deduplicação entre local e externo (por ID)
-  const localIdSet = new Set<string>([
-    ...deduplicatedFilmesLocal.map((i: any) => String(i.id)),
-    ...deduplicatedSeriesLocal.map((i: any) => String(i.id)),
-  ].filter(Boolean));
-
-  const filmesExternalFiltered = deduplicatedFilmesExternal.filter((it: any) => {
-    const id = String(it.id || '');
-    return !(id && localIdSet.has(id));
-  });
-
-  const seriesExternalFiltered = deduplicatedSeriesExternal.filter((it: any) => {
-    const id = String(it.id || '');
-    return !(id && localIdSet.has(id));
-  });
-
-  let filmes = [...deduplicatedFilmesLocal, ...filmesExternalFiltered];
-  let series = [...deduplicatedSeriesLocal, ...seriesExternalFiltered];
-
-  // Processar promise de fetch externo
+  // Se tiver promise externa, processar
   if (externalFetchPromise) {
     try {
       const externalData = await externalFetchPromise;
       
-      const extFilmesMapped = filterByRelevance(
-        externalData
-          .filter((r: any) => r.media_type === 'movie' || r.tipo === 'filme')
-          .map(mapMovie),
-        query,
-        minRelevanceScore
-      );
+      const extProcessed = externalData
+        .map((r: any) => {
+          if (r.media_type === 'movie' || r.tipo === 'filme') {
+            return mapMovie(r);
+          } else if (r.media_type === 'tv' || r.tipo === 'serie') {
+            return mapSeries(enrichSeriesData(r));
+          } else if (r.tipo === 'anime') {
+            return mapAnime(r);
+          }
+          return null;
+        })
+        .filter(Boolean);
 
-      const extSeriesMapped = filterByRelevance(
-        externalData
-          .filter((r: any) => r.media_type === 'tv' || r.tipo === 'serie')
-          .map(enrichSeriesData)
-          .map(mapSeries),
-        query,
-        minRelevanceScore
-      );
+      // ⭐ Deduplicar com resultado anterior
+      const combined = [...allResults, ...extProcessed];
+      const dedupCombined = deduplicateByIdAndTitle(combined);
 
-      // ⭐ Deduplicate before adding
-      const deduplicatedExtFilmes = deduplicateItems(extFilmesMapped).filter((it: any) => {
-        const id = String(it.id || '');
-        return !(id && localIdSet.has(id));
-      });
-
-      const deduplicatedExtSeries = deduplicateItems(extSeriesMapped).filter((it: any) => {
-        const id = String(it.id || '');
-        return !(id && localIdSet.has(id));
-      });
-
-      filmes.push(...deduplicatedExtFilmes);
-      series.push(...deduplicatedExtSeries);
+      allResults = dedupCombined;
     } catch (e) {
-      // Falha ao obter externos
+      // Continuar com resultado anterior
     }
   }
 
-  // ⭐ Final deduplication of combined results
-  filmes = deduplicateItems(filmes);
-  series = deduplicateItems(series);
+  const filmes2 = allResults.filter((i: any) => i.media_type === 'movie');
+  const series2 = allResults.filter((i: any) => i.media_type === 'tv' && i.tipo === 'serie');
+  const animes2 = allResults.filter((i: any) => i.tipo === 'anime');
 
   return NextResponse.json({
-    filmes,
-    series,
-    animes: deduplicatedAnimes,
-    total_filmes: filmes.length,
-    total_series: series.length,
-    total_animes: deduplicatedAnimes.length,
+    filmes: filmes2,
+    series: series2,
+    animes: animes2,
+    total_filmes: filmes2.length,
+    total_series: series2.length,
+    total_animes: animes2.length,
     stats: {
-      local_filmes: deduplicatedFilmesLocal.length,
-      local_series: deduplicatedSeriesLocal.length,
-      external_filmes: filmesExternalFiltered.length,
-      external_series: seriesExternalFiltered.length,
+      local_filmes: filmesLocal.length,
+      local_series: seriesLocal.length,
+      external_filmes: filmesExternal.length,
+      external_series: seriesExternal.length,
     },
     search_config: {
       min_relevance_score: minRelevanceScore,

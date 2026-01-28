@@ -19,8 +19,8 @@ const normalize = (s: string): string => {
   return String(s || '')
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '') // Remove acentos
-    .replace(/[^a-z0-9\s]/g, '') // Remove caracteres especiais
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
 };
@@ -34,16 +34,10 @@ const calculateRelevanceScore = (query: string, text: string): number => {
   const q = normalize(query);
   const t = normalize(text);
 
-  // Correspondência exata (100)
   if (t === q) return 100;
-
-  // Query é substring (85)
   if (t.includes(q)) return 85;
-
-  // Texto começa com query (80)
   if (t.startsWith(q)) return 80;
 
-  // Todas as palavras encontradas (70-85)
   const queryWords = q.split(' ').filter(Boolean);
   const textWords = t.split(' ');
   const matchedWords = queryWords.filter(qw => textWords.some(tw => tw.includes(qw)));
@@ -52,11 +46,9 @@ const calculateRelevanceScore = (query: string, text: string): number => {
     return 70 + (matchedWords.length / queryWords.length) * 15;
   }
 
-  // Alguma palavra encontrada (40)
   const anyWordMatch = queryWords.some(qw => t.includes(qw));
   if (anyWordMatch) return 40;
 
-  // Similaridade Levenshtein (até 60)
   const similarity = calculateStringSimilarity(q, t);
   if (similarity > 0.6) {
     return similarity * 60;
@@ -100,10 +92,8 @@ const calculateStringSimilarity = (s1: string, s2: string): number => {
 
 /**
  * Detecta o tipo de série (com temporadas ou simples)
- * Retorna 'seasons' ou 'simple'
  */
 const detectSeriesType = (item: any): 'seasons' | 'simple' => {
-  // Verifica se tem propriedades de temporadas (temporada_1, temporada_2, etc)
   const hasSeasons = Object.keys(item).some(key => 
     key.match(/^temporada_\d+$/) || key.match(/^season_\d+$/)
   );
@@ -150,7 +140,7 @@ const filterByRelevance = (items: any[], query: string, minScore: number = 20): 
 };
 
 /**
- * Enriquece item de série com informações de episódios (se houver temporadas)
+ * Enriquece item de série com informações de episódios
  */
 const enrichSeriesData = (item: any): any => {
   const seriesType = detectSeriesType(item);
@@ -163,7 +153,6 @@ const enrichSeriesData = (item: any): any => {
   };
 
   if (seriesType === 'seasons') {
-    // Conta temporadas e episódios
     let totalSeasons = 0;
     let totalEpisodes = 0;
 
@@ -183,6 +172,58 @@ const enrichSeriesData = (item: any): any => {
   return enriched;
 };
 
+/**
+ * ⭐ DEDUPLICAÇÃO AVANÇADA
+ * Remove duplicatas comparando: ID, título normalizado, poster, URL do vídeo
+ */
+const deduplicateItems = (items: any[]): any[] => {
+  const seen = new Map<string, any>();
+  
+  items.forEach(item => {
+    // Criar chaves únicas para identificar duplicatas
+    const id = String(item.id || item.tmdb || '');
+    const normalizedTitle = normalize(item.title || item.name || item.original_title || item.original_name || '');
+    const posterKey = (item.poster_path || item.poster_url || '').replace(/\/t\/p\/w\d+\/|\/t\/p\/w\d+\//g, '');
+    const videoKey = (item.URLvideo || item.video || item.url || '').replace(/\?.*$/, ''); // Remove query params
+    
+    // Tentar encontrar duplicata por ID primeiro (mais confiável)
+    if (id) {
+      if (seen.has(`id:${id}`)) {
+        return; // Skip - já existe com este ID
+      }
+      seen.set(`id:${id}`, item);
+    }
+    
+    // Se não tem ID, tentar por título + poster
+    if (normalizedTitle && posterKey) {
+      const key = `title:${normalizedTitle}:${posterKey}`;
+      if (seen.has(key)) {
+        return; // Skip - já existe com este título e poster
+      }
+      seen.set(key, item);
+    }
+    
+    // Se não tem poster, tentar por título + vídeo URL
+    if (normalizedTitle && videoKey) {
+      const key = `video:${normalizedTitle}:${videoKey}`;
+      if (seen.has(key)) {
+        return; // Skip - já existe com este título e vídeo
+      }
+      seen.set(key, item);
+    }
+    
+    // Se só tem título
+    if (normalizedTitle) {
+      const key = `title:${normalizedTitle}`;
+      if (!seen.has(key)) {
+        seen.set(key, item);
+      }
+    }
+  });
+
+  return Array.from(seen.values());
+};
+
 // ============= FIM FUNÇÕES MELHORADAS =============
 
 const loadLocalData = async (file: string): Promise<any[]> => {
@@ -191,9 +232,7 @@ const loadLocalData = async (file: string): Promise<any[]> => {
     const content = await fs.readFile(filePath, 'utf-8');
     const data = JSON.parse(content);
 
-    // Suporta ambos os formatos: array direto ou { results: [] } ou { pages: [...] }
     if (Array.isArray(data)) return data;
-    
     if (data.results && Array.isArray(data.results)) return data.results;
     
     if (data.pages && Array.isArray(data.pages)) {
@@ -314,7 +353,6 @@ export async function GET(request: Request) {
       tipo: 'serie',
     };
 
-    // Se tiver informações enriquecidas, manter
     if (r._seriesType) {
       mapped._seriesType = r._seriesType;
       mapped._totalSeasons = r._totalSeasons;
@@ -384,12 +422,16 @@ export async function GET(request: Request) {
     if (externalFetchPromise) void externalFetchPromise;
     const external_url = `${new URL(request.url).origin}/api/pesquisa?query=${encodeURIComponent(query)}&externalOnly=1`;
     
+    // ⭐ Deduplicate before returning
+    const deduplicatedFilmes = deduplicateItems(filmesLocal);
+    const deduplicatedSeries = deduplicateItems(seriesLocal);
+    
     return NextResponse.json({
-      filmes: filmesLocal,
-      series: seriesLocal,
+      filmes: deduplicatedFilmes,
+      series: deduplicatedSeries,
       animes: [],
-      total_filmes: filmesLocal.length,
-      total_series: seriesLocal.length,
+      total_filmes: deduplicatedFilmes.length,
+      total_series: deduplicatedSeries.length,
       total_animes: 0,
       source: {
         external_fetch_started: !!externalFetchPromise,
@@ -437,13 +479,18 @@ export async function GET(request: Request) {
       return !(id && localIdSet.has(id));
     });
 
+    // ⭐ Deduplicate
+    const deduplicatedFilmes = deduplicateItems(filmesExternalFiltered);
+    const deduplicatedSeries = deduplicateItems(seriesExternalFiltered);
+    const deduplicatedAnimes = deduplicateItems(animes);
+
     return NextResponse.json({
-      filmes: filmesExternalFiltered,
-      series: seriesExternalFiltered,
-      animes: filterByRelevance(externalAnimeResults.map(mapAnime), query, minRelevanceScore),
-      total_filmes: filmesExternalFiltered.length,
-      total_series: seriesExternalFiltered.length,
-      total_animes: animes.length,
+      filmes: deduplicatedFilmes,
+      series: deduplicatedSeries,
+      animes: deduplicatedAnimes,
+      total_filmes: deduplicatedFilmes.length,
+      total_series: deduplicatedSeries.length,
+      total_animes: deduplicatedAnimes.length,
       source: {
         external_count: externalResults.length,
         local_movies: filmesLocal.length,
@@ -453,35 +500,33 @@ export async function GET(request: Request) {
     });
   }
 
-  // Deduplicação por ID e título
+  // Deduplicação principal
+  const deduplicatedFilmesExternal = deduplicateItems(filmesExternal);
+  const deduplicatedSeriesExternal = deduplicateItems(seriesExternal);
+  const deduplicatedAnimes = deduplicateItems(animes);
+
+  // Deduplicação local
+  const deduplicatedFilmesLocal = deduplicateItems(filmesLocal);
+  const deduplicatedSeriesLocal = deduplicateItems(seriesLocal);
+
+  // Deduplicação entre local e externo (por ID)
   const localIdSet = new Set<string>([
-    ...filmesLocal.map((i: any) => String(i.id)),
-    ...seriesLocal.map((i: any) => String(i.id)),
+    ...deduplicatedFilmesLocal.map((i: any) => String(i.id)),
+    ...deduplicatedSeriesLocal.map((i: any) => String(i.id)),
   ].filter(Boolean));
 
-  const localTitleSet = new Set<string>([
-    ...filmesLocal.map((i: any) => normalize(i.title || i.name)),
-    ...seriesLocal.map((i: any) => normalize(i.title || i.name || i.original_name)),
-  ].filter(Boolean));
-
-  const filmesExternalFiltered = filmesExternal.filter((it: any) => {
+  const filmesExternalFiltered = deduplicatedFilmesExternal.filter((it: any) => {
     const id = String(it.id || '');
-    if (id && localIdSet.has(id)) return false;
-    const t = normalize(it.title || it.name || '');
-    if (t && localTitleSet.has(t)) return false;
-    return true;
+    return !(id && localIdSet.has(id));
   });
 
-  const seriesExternalFiltered = seriesExternal.filter((it: any) => {
+  const seriesExternalFiltered = deduplicatedSeriesExternal.filter((it: any) => {
     const id = String(it.id || '');
-    if (id && localIdSet.has(id)) return false;
-    const t = normalize(it.title || it.name || '');
-    if (t && localTitleSet.has(t)) return false;
-    return true;
+    return !(id && localIdSet.has(id));
   });
 
-  let filmes = [...filmesLocal, ...filmesExternalFiltered];
-  let series = [...seriesLocal, ...seriesExternalFiltered];
+  let filmes = [...deduplicatedFilmesLocal, ...filmesExternalFiltered];
+  let series = [...deduplicatedSeriesLocal, ...seriesExternalFiltered];
 
   // Processar promise de fetch externo
   if (externalFetchPromise) {
@@ -494,13 +539,7 @@ export async function GET(request: Request) {
           .map(mapMovie),
         query,
         minRelevanceScore
-      ).filter((it: any) => {
-        const id = String(it.id || '');
-        if (id && localIdSet.has(id)) return false;
-        const t = normalize(it.title || it.name || '');
-        if (t && localTitleSet.has(t)) return false;
-        return true;
-      });
+      );
 
       const extSeriesMapped = filterByRelevance(
         externalData
@@ -509,31 +548,40 @@ export async function GET(request: Request) {
           .map(mapSeries),
         query,
         minRelevanceScore
-      ).filter((it: any) => {
+      );
+
+      // ⭐ Deduplicate before adding
+      const deduplicatedExtFilmes = deduplicateItems(extFilmesMapped).filter((it: any) => {
         const id = String(it.id || '');
-        if (id && localIdSet.has(id)) return false;
-        const t = normalize(it.title || it.name || '');
-        if (t && localTitleSet.has(t)) return false;
-        return true;
+        return !(id && localIdSet.has(id));
       });
 
-      filmes.push(...extFilmesMapped);
-      series.push(...extSeriesMapped);
+      const deduplicatedExtSeries = deduplicateItems(extSeriesMapped).filter((it: any) => {
+        const id = String(it.id || '');
+        return !(id && localIdSet.has(id));
+      });
+
+      filmes.push(...deduplicatedExtFilmes);
+      series.push(...deduplicatedExtSeries);
     } catch (e) {
       // Falha ao obter externos
     }
   }
 
+  // ⭐ Final deduplication of combined results
+  filmes = deduplicateItems(filmes);
+  series = deduplicateItems(series);
+
   return NextResponse.json({
     filmes,
     series,
-    animes,
+    animes: deduplicatedAnimes,
     total_filmes: filmes.length,
     total_series: series.length,
-    total_animes: animes.length,
+    total_animes: deduplicatedAnimes.length,
     stats: {
-      local_filmes: filmesLocal.length,
-      local_series: seriesLocal.length,
+      local_filmes: deduplicatedFilmesLocal.length,
+      local_series: deduplicatedSeriesLocal.length,
       external_filmes: filmesExternalFiltered.length,
       external_series: seriesExternalFiltered.length,
     },

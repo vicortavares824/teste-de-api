@@ -131,12 +131,26 @@ const loadLocalData = async (file: string): Promise<any[]> => {
     const filePath = path.resolve(process.cwd(), file);
     const content = await fs.readFile(filePath, 'utf-8');
     const data = JSON.parse(content);
-    
+
+    // Suporta três formatos comuns:
+    // 1) Array direto (ex: [...])
+    // 2) Objeto com `results: []` (ex: { results: [...] })
+    // 3) Objeto com `pages: [ { results: [...] }, ... ]`
+    if (Array.isArray(data)) {
+      setCache(cacheKey, data);
+      return data;
+    }
+
+    if (data.results && Array.isArray(data.results)) {
+      setCache(cacheKey, data.results);
+      return data.results;
+    }
+
     const items: any[] = [];
     for (const page of data.pages || []) {
-      items.push(...(page.results || []));
+      if (page && Array.isArray(page.results)) items.push(...page.results);
     }
-    
+
     setCache(cacheKey, items);
     return items;
   } catch (error) {

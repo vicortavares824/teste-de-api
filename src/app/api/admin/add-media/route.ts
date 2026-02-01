@@ -8,6 +8,12 @@ export const runtime = 'nodejs';
 export async function POST(request: NextRequest) {
   console.log('[api/admin/add-media] POST handler called')
 
+  // Diagnóstico rápido: garantir que a variável de ambiente do Mongo esteja definida
+  if (!process.env.MONGODB_URI) {
+    console.error('[api/admin/add-media] MONGODB_URI não configurado no ambiente')
+    return NextResponse.json({ error: 'MONGODB_URI não configurado no ambiente. Verifique as env vars no Vercel.' }, { status: 500 })
+  }
+
   try {
     const { type, data } = await request.json();
 

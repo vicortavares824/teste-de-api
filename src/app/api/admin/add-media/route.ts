@@ -49,11 +49,12 @@ export async function POST(request: NextRequest) {
       newItem.title = data.title;
       newItem.tmdb = String(data.id);
       
-      // Se tiver URLTxt, prioriza ele e limpa os campos de vídeo originais conforme solicitado
+      // Se tiver URLTxt (proxied .m3u8 do proxy), prioriza ele como URLvideo
+      // Não salvar URLTxt como campo separado — colocamos o proxied m3u8 em URLvideo
       if (data.URLTxt) {
-        newItem.URLTxt = data.URLTxt;
-        newItem.video = "";
-        newItem.URLvideo = "";
+        newItem.video = data.URLTxt;
+        newItem.URLvideo = data.URLTxt;
+
       } else {
         newItem.video = data.video || '';
         newItem.URLvideo = data.video || '';

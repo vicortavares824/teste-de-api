@@ -8,7 +8,7 @@ import { SearchBar } from "../components/admin/search-bar"
 import { MediaTabs } from "../components/admin/media-tabs"
 import { SearchResults } from "../components/admin/search-results"
 import { MediaForm } from "../components/admin/media-form"
-import { FeedbackMessage } from "../components/admin/feedback-message"
+
 import { MediaList } from "../components/admin/media-list"
 import { MediaEditForm } from "../components/admin/media-edit-form"
 import { ArrowRightOnRectangleIcon, PlusIcon, PencilSquareIcon } from '@heroicons/react/24/outline'
@@ -354,8 +354,7 @@ export default function AdminPage() {
         {/* Tabs */}
         <MediaTabs activeTab={activeTab} onTabChange={switchTab} />
 
-        {/* Feedback Message */}
-        {message && <FeedbackMessage message={message} />}
+       
 
         {/* View Mode Content */}
         {viewMode === "edit" ? (

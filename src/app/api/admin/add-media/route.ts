@@ -125,15 +125,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Salvar no Mongo (upsert)
-    const docToSave = { ...newItem, tmdb: newItem.tmdb || String(newItem.id) };
-    await col.updateOne({ id: newItem.id }, { $set: docToSave }, { upsert: true });
+    // Upsert com informação de retorno
+    const filter = { id: newItem.id }
+    const docToSave = { ...newItem, tmdb: newItem.tmdb || String(newItem.id) }
+    const upsertRes = await col.updateOne(filter, { $set: docToSave }, { upsert: true })
+
+    const resultInfo: any = { collection: collectionName }
+    if (upsertRes.upsertedId) {
+      resultInfo.action = 'created'
+      resultInfo.upsertedId = upsertRes.upsertedId
+    } else {
+      resultInfo.action = 'updated'
+    }
 
     return NextResponse.json({
       success: true,
-      message: `${type === 'filmes' ? 'Filme' : type === 'series' ? 'Série' : 'Anime'} adicionado com sucesso!`,
+      message: `${type === 'filmes' ? 'Filme' : type === 'series' ? 'Série' : 'Anime'} adicionado/atualizado com sucesso!`,
       item: newItem,
       savedToMongo: true,
+      result: resultInfo,
     });
   } catch (error: any) {
     console.error('Erro ao adicionar mídia:', error);

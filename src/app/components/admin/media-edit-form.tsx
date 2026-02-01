@@ -397,17 +397,28 @@ export function MediaEditForm({ item, type, onClose, onSave }: MediaEditFormProp
 
             {/* URL do Vídeo (apenas para filmes) */}
             {type === "filmes" && (
-              <div>
-                <label className="block text-sm font-medium text-zinc-400 mb-2">URL do Vídeo</label>
-                <input
-                  type="url"
-                  value={formData.video || formData.URLvideo || ""}
-                  onChange={(e) => {
-                    handleChange("video", e.target.value)
-                    handleChange("URLvideo", e.target.value)
-                  }}
-                  className="w-full px-4 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-zinc-400 mb-2">URL do Vídeo</label>
+                  <input
+                    type="url"
+                    value={formData.video || formData.URLvideo || ""}
+                    onChange={(e) => {
+                      handleChange("video", e.target.value)
+                      handleChange("URLvideo", e.target.value)
+                    }}
+                    className="w-full px-4 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-zinc-400 mb-2">URLTxt (StreamP2P)</label>
+                  <input
+                    type="text"
+                    value={formData.URLTxt || ""}
+                    onChange={(e) => handleChange("URLTxt", e.target.value)}
+                    className="w-full px-4 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  />
+                </div>
               </div>
             )}
 

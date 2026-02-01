@@ -1,20 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import fs from "fs/promises"
-import path from "path"
-
-const getFilePath = (type: string) => {
-  const basePath = process.cwd()
-  switch (type) {
-    case "filmes":
-      return path.join(basePath, "filmes.json")
-    case "series":
-      return path.join(basePath, "series.json")
-    case "animes":
-      return path.join(basePath, "animes.json")
-    default:
-      throw new Error("Tipo inválido")
-  }
-}
+import { getDb } from '@/lib/mongodb'
 
 export async function GET(req: NextRequest) {
   try {
@@ -23,42 +8,51 @@ export async function GET(req: NextRequest) {
     const page = parseInt(searchParams.get("page") || "1")
     const limit = parseInt(searchParams.get("limit") || "20")
     const search = searchParams.get("search") || ""
+    const kind = searchParams.get("kind") || undefined // opcional: ajuda a escolher animes_series vs animes_filmes
 
     if (!type) {
       return NextResponse.json({ error: "Tipo é obrigatório" }, { status: 400 })
     }
 
-    const filePath = getFilePath(type)
-    const fileContent = await fs.readFile(filePath, "utf-8")
-    const data = JSON.parse(fileContent)
-
-    // Coletar todos os itens de todas as páginas
-    let allItems: any[] = []
-    for (const p of data.pages) {
-      allItems = allItems.concat(p.results)
+    // Mapear type para coleção
+    let collectionName = ''
+    if (type === 'filmes') collectionName = 'filmes'
+    else if (type === 'series') collectionName = 'series'
+    else if (type === 'animes') {
+      if (kind === 'series') collectionName = 'animes_series'
+      else if (kind === 'filmes') collectionName = 'animes_filmes'
+      else collectionName = 'animes_series' // default
+    } else {
+      return NextResponse.json({ error: 'Tipo inválido' }, { status: 400 })
     }
 
-    // Filtrar por busca se houver
+    const db = await getDb()
+    const col = db.collection(collectionName)
+
+    // Construir filtro de busca simples (nome/title)
+    const filter: any = {}
     if (search) {
-      allItems = allItems.filter((item: any) => {
-        const title = item.title || item.name || item.original_title || item.original_name || ""
-        return title.toLowerCase().includes(search.toLowerCase())
-      })
+      filter.$or = [
+        { title: { $regex: search, $options: 'i' } },
+        { name: { $regex: search, $options: 'i' } },
+        { original_title: { $regex: search, $options: 'i' } },
+        { original_name: { $regex: search, $options: 'i' } },
+      ]
     }
 
-    // Ordenar por ID (mais recente primeiro)
-    allItems.sort((a, b) => b.id - a.id)
-
-    // Paginação
-    const startIndex = (page - 1) * limit
-    const endIndex = startIndex + limit
-    const paginatedItems = allItems.slice(startIndex, endIndex)
+    const total = await col.countDocuments(filter)
+    const items = await col
+      .find(filter)
+      .sort({ id: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .toArray()
 
     return NextResponse.json({
-      items: paginatedItems,
-      total: allItems.length,
+      items,
+      total,
       page,
-      totalPages: Math.ceil(allItems.length / limit),
+      totalPages: Math.ceil(total / limit),
     })
   } catch (error: any) {
     console.error("Erro ao listar itens:", error)

@@ -3,7 +3,9 @@
 import type React from "react"
 
 import { useState } from "react"
+import { useToast } from '../../../hooks/use-toast'
 import { PlayIcon } from "@heroicons/react/24/outline"
+import { ClipboardIcon } from '@heroicons/react/24/outline'
 import { EpisodeManager } from "./episode-manager"
 
 type MediaType = "filmes" | "series" | "animes"
@@ -49,6 +51,8 @@ export function MediaForm({ formData, onFormDataChange, onSubmit, activeTab, loa
   const [episodeMessage, setEpisodeMessage] = useState("")
   const [isFetchingTxt, setIsFetchingTxt] = useState(false)
   const [isFetchingEpisodeTxt, setIsFetchingEpisodeTxt] = useState(false)
+  const [publishResult, setPublishResult] = useState<any>(null)
+  const { toast } = useToast()
 
   // Normaliza URLs de index-...-a1.txt substituindo -f<N>- por -f1- (ex: index-f2-v1-a1.txt -> index-f1-v1-a1.txt)
   const normalizeTxtIndex = (rawUrl: string | null | undefined) => {
@@ -191,7 +195,10 @@ export function MediaForm({ formData, onFormDataChange, onSubmit, activeTab, loa
                   type="button"
                   onClick={async () => {
                     // publicar MP4 para streamp2p usando videoStreamp como origem
-                    if (!formData.videoStreamp) return alert('Preencha a URL Streamp2P para publicar')
+                    if (!formData.videoStreamp) {
+                      toast({ title: 'Preencha a URL Streamp2P', description: 'Forneça a URL Streamp2P antes de publicar.' })
+                      return
+                    }
                     try {
                       const res = await fetch('/api/admin/publish', {
                         method: 'POST',
@@ -200,15 +207,16 @@ export function MediaForm({ formData, onFormDataChange, onSubmit, activeTab, loa
                       })
                       if (!res.ok) {
                         const err = await res.json().catch(() => ({ error: 'Erro' }))
-                        alert('Falha ao publicar: ' + (err.error || JSON.stringify(err)))
+                        toast({ title: 'Falha ao publicar', description: String(err.error || JSON.stringify(err)) })
                         return
                       }
                       const data = await res.json()
                       // atualizar URLTxt com retorno (não substitui o campo principal ainda)
                       onFormDataChange({ ...formData, URLTxt: data.URLTxt || formData.URLTxt })
-                      alert('Publicação Streamp2P concluída. URLTxt: ' + (data.URLTxt || 'não retornado'))
+                      setPublishResult(data)
+                      toast({ title: 'Publicação Streamp2P concluída', description: data.URLTxt || 'URLTxt não retornado' })
                     } catch (err) {
-                      alert('Erro ao publicar: ' + err)
+                      toast({ title: 'Erro ao publicar', description: String(err) })
                     }
                   }}
                   className="px-3 py-2 bg-emerald-600 text-white rounded-md hover:opacity-90 text-sm"
@@ -232,26 +240,30 @@ export function MediaForm({ formData, onFormDataChange, onSubmit, activeTab, loa
                 <button
                   type="button"
                   onClick={async () => {
-                    if (!formData.txtUrl) return alert('Preencha a URL TXT antes de buscar o m3u8')
+                    if (!formData.txtUrl) {
+                      toast({ title: 'Preencha a URL TXT', description: 'Forneça a URL .txt antes de gerar m3u8.' })
+                      return
+                    }
                     try {
                       setIsFetchingTxt(true)
-                      alert('Buscando m3u8...')
+                      toast({ title: 'Buscando m3u8', description: 'Aguarde enquanto o m3u8 é gerado via proxy.' })
                       const normalized = normalizeTxtIndex(formData.txtUrl)
                       if (normalized && normalized !== formData.txtUrl) {
-                        alert(`Transformando TXT:\n${formData.txtUrl}\n→\n${normalized}`)
+                        toast({ title: 'TXT transformado', description: `${formData.txtUrl} → ${normalized}` })
                       }
                       const proxyRes = await fetch(`/api/proxy?url=${encodeURIComponent(normalized || '')}`)
                       if (!proxyRes.ok) {
                         const err = await proxyRes.text().catch(() => 'Erro ao chamar proxy')
-                        alert('Falha ao gerar m3u8 via proxy: ' + err)
+                        toast({ title: 'Falha ao gerar m3u8', description: String(err) })
                         return
                       }
                       const proxiedUrl = (await proxyRes.text()).trim()
                       // substituir o input principal de adicionar filme (video) com o m3u8
-                      onFormDataChange({ ...formData, video: proxiedUrl, URLTxt: proxiedUrl })
-                      alert('m3u8 obtido e definido como URL principal para adicionar o filme')
+                      onFormDataChange({ ...formData, video: proxiedUrl, URLvideo: proxiedUrl })
+                      setPublishResult({ URLvideo: proxiedUrl, note: 'm3u8 obtido via proxy' })
+                      toast({ title: 'm3u8 obtido', description: 'm3u8 definido como URL principal para adicionar o filme.' })
                     } catch (err) {
-                      alert('Erro ao buscar m3u8: ' + err)
+                      toast({ title: 'Erro ao buscar m3u8', description: String(err) })
                     } finally {
                       setIsFetchingTxt(false)
                     }
@@ -268,13 +280,41 @@ export function MediaForm({ formData, onFormDataChange, onSubmit, activeTab, loa
               {/* Input visível mostrando a URL .m3u8 obtida (proxied) */}
               <div className="mt-3">
                 <label className="text-sm font-semibold text-foreground mb-1 block">URL m3u8 obtida</label>
-                <input
-                  type="text"
-                  readOnly
-                  value={(formData.video && formData.video.trim()) || (formData.URLTxt && formData.URLTxt.trim()) || ''}
-                  onClick={(e) => { if ((e.target as HTMLInputElement).value) navigator.clipboard?.writeText((e.target as HTMLInputElement).value) }}
-                  className="w-full bg-muted/30 border border-border rounded-md px-3 py-2 text-sm text-foreground"
-                />
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={(formData.video && formData.video.trim()) || (formData.URLTxt && formData.URLTxt.trim()) || ''}
+                    className="flex-1 bg-muted/30 border border-border rounded-md px-3 py-2 text-sm text-foreground"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const v = (formData.video && formData.video.trim()) || (formData.URLTxt && formData.URLTxt.trim()) || ''
+                      if (v) {
+                        navigator.clipboard?.writeText(v)
+                        toast({ title: 'Copiado', description: 'URL m3u8 copiada para a área de transferência' })
+                      } else {
+                        toast({ title: 'Nada para copiar', description: 'Não há URL m3u8 disponível' })
+                      }
+                    }}
+                    className="px-3 py-2 bg-zinc-800 text-zinc-200 rounded-md text-sm flex items-center gap-2"
+                  >
+                    <ClipboardIcon className="w-4 h-4" /> Copiar
+                  </button>
+                </div>
+
+                {/* Painel simples mostrando resultado da última publicação */}
+                {publishResult && (
+                  <div className="mt-2 p-2 bg-muted/40 border border-border rounded-md text-sm">
+                    <div><strong>Resultado:</strong></div>
+                    {publishResult.taskId && <div>taskId: {String(publishResult.taskId)}</div>}
+                    {publishResult.videoId && <div>videoId: {String(publishResult.videoId)}</div>}
+                    {publishResult.URLTxt && <div>URLTxt: <a href={publishResult.URLTxt} target="_blank" rel="noreferrer noopener" className="underline">abrir</a></div>}
+                    {publishResult.URLvideo && <div>URLvideo: <span className="break-all">{String(publishResult.URLvideo)}</span></div>}
+                    {publishResult.note && <div>nota: {String(publishResult.note)}</div>}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -300,26 +340,27 @@ export function MediaForm({ formData, onFormDataChange, onSubmit, activeTab, loa
                 <button
               type="button"
               onClick={async () => {
-                if (!currentSeason || !currentEpisode || !currentEpisodeUrl) {
-                  alert('⚠️ Preencha temporada, episódio e URL para publicar')
-                  return
-                }
+                  if (!currentSeason || !currentEpisode || !currentEpisodeUrl) {
+                    toast({ title: 'Preencha dados do episódio', description: 'Temporada, episódio e URL são obrigatórios.' })
+                    return
+                  }
                 try {
                   if (currentEpisodeUrl.toLowerCase().endsWith('.txt')) {
                     const normalized = normalizeTxtIndex(currentEpisodeUrl)
                     if (normalized && normalized !== currentEpisodeUrl) {
-                      alert(`Transformando TXT:\n${currentEpisodeUrl}\n→\n${normalized}`)
+                      toast({ title: 'TXT transformado', description: `${currentEpisodeUrl} → ${normalized}` })
                     }
                     const proxyRes = await fetch(`/api/proxy?url=${encodeURIComponent(normalized || '')}`)
                     if (!proxyRes.ok) {
                       const err = await proxyRes.text().catch(() => 'Erro ao chamar proxy')
-                      alert('Falha ao gerar m3u8 via proxy: ' + err)
+                      toast({ title: 'Falha ao gerar m3u8', description: String(err) })
                       return
                     }
                     const proxiedUrl = await proxyRes.text()
                     // Atualizar o campo de episódio atual (essa URL será usada ao adicionar episódio)
                     setCurrentEpisodeUrl(proxiedUrl.trim())
-                    alert('Publicação do episódio concluída. URLTxt: ' + proxiedUrl.trim())
+                      setPublishResult({ URLvideo: proxiedUrl.trim(), note: 'episódio m3u8 obtido' })
+                      toast({ title: 'Episódio publicado (proxy)', description: proxiedUrl.trim() })
                     return
                   }
 
@@ -332,15 +373,16 @@ export function MediaForm({ formData, onFormDataChange, onSubmit, activeTab, loa
 
                   if (!res.ok) {
                     const err = await res.json().catch(() => ({ error: 'Erro' }))
-                    alert('Falha ao publicar: ' + (err.error || JSON.stringify(err)))
+                    toast({ title: 'Falha ao publicar', description: String(err.error || JSON.stringify(err)) })
                     return
                   }
 
                   const data = await res.json()
                   setCurrentEpisodeUrl(data.URLTxt || currentEpisodeUrl)
-                  alert('Publicação concluída. URLTxt: ' + (data.URLTxt || 'não retornado'))
+                  setPublishResult(data)
+                  toast({ title: 'Publicação concluída', description: data.URLTxt || 'URLTxt não retornado' })
                 } catch (e) {
-                  alert('Erro ao publicar: ' + e)
+                  toast({ title: 'Erro ao publicar', description: String(e) })
                 }
               }}
               className="px-4 py-2 bg-emerald-600 text-white rounded-md hover:opacity-90 text-sm font-medium"
@@ -351,13 +393,19 @@ export function MediaForm({ formData, onFormDataChange, onSubmit, activeTab, loa
                   type="button"
                   disabled={isFetchingEpisodeTxt}
                   onClick={async () => {
-                    if (!currentEpisodeUrl) return alert('Preencha a URL do episódio antes de buscar o m3u8')
-                    if (!currentEpisodeUrl.toLowerCase().endsWith('.txt')) return alert('A URL do episódio precisa ser um .txt')
+                    if (!currentEpisodeUrl) {
+                      toast({ title: 'Preencha a URL do episódio', description: 'Forneça a URL antes de buscar m3u8.' })
+                      return
+                    }
+                    if (!currentEpisodeUrl.toLowerCase().endsWith('.txt')) {
+                      toast({ title: 'URL inválida', description: 'A URL do episódio precisa ser um .txt' })
+                      return
+                    }
                     try {
                       setIsFetchingEpisodeTxt(true)
                       const normalized = normalizeTxtIndex(currentEpisodeUrl)
                       if (normalized && normalized !== currentEpisodeUrl) {
-                        alert(`Transformando TXT:\n${currentEpisodeUrl}\n→\n${normalized}`)
+                        toast({ title: 'TXT transformado', description: `${currentEpisodeUrl} → ${normalized}` })
                       }
                       const proxyRes = await fetch(`/api/proxy?url=${encodeURIComponent(normalized || '')}`)
                       if (!proxyRes.ok) {
@@ -367,9 +415,10 @@ export function MediaForm({ formData, onFormDataChange, onSubmit, activeTab, loa
                       }
                       const proxiedUrl = (await proxyRes.text()).trim()
                       setCurrentEpisodeUrl(proxiedUrl)
-                      alert('m3u8 obtido para episódio. URLTxt: ' + proxiedUrl)
+                      setPublishResult({ URLvideo: proxiedUrl, note: 'episódio m3u8 obtido' })
+                      toast({ title: 'm3u8 obtido', description: proxiedUrl })
                     } catch (e) {
-                      alert('Erro ao buscar m3u8 do episódio: ' + e)
+                      toast({ title: 'Erro ao buscar m3u8 do episódio', description: String(e) })
                     } finally {
                       setIsFetchingEpisodeTxt(false)
                     }

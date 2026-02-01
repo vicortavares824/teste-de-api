@@ -1,26 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Octokit } from '@octokit/rest';
+import { getDb } from '@/lib/mongodb';
 
 export const runtime = 'nodejs';
 
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
-const GITHUB_OWNER = process.env.GITHUB_OWNER || 'vicortavares824';
-const GITHUB_REPO = process.env.GITHUB_REPO || 'teste-de-api';
-const GITHUB_BRANCH = process.env.GITHUB_BRANCH || 'main';
-
-const FILE_MAP = {
-  filmes: 'filmes.json',
-  series: 'series.json',
-  animes: 'animes.json',
-};
+// Nota: salvamento no GitHub removido — agora apenas MongoDB (upsert)
 
 export async function POST(request: NextRequest) {
-  if (!GITHUB_TOKEN) {
-    return NextResponse.json(
-      { error: 'GITHUB_TOKEN não configurado no arquivo .env.local' },
-      { status: 500 }
-    );
-  }
+  console.log('[api/admin/add-media] POST handler called')
 
   try {
     const { type, data } = await request.json();
@@ -29,23 +15,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Tipo inválido' }, { status: 400 });
     }
 
-    const fileName = FILE_MAP[type as keyof typeof FILE_MAP];
-    const octokit = new Octokit({ auth: GITHUB_TOKEN });
-
-    // 1. Buscar o arquivo atual
-    const { data: fileData } = await octokit.repos.getContent({
-      owner: GITHUB_OWNER,
-      repo: GITHUB_REPO,
-      path: fileName,
-    });
-
-    if (!('content' in fileData)) {
-      return NextResponse.json({ error: 'Arquivo não encontrado' }, { status: 404 });
-    }
-
-    // 2. Decodificar e parsear
-    const content = Buffer.from(fileData.content, 'base64').toString();
-    const json = JSON.parse(content);
+  // Conectar ao Mongo e obter coleção alvo
+  const db = await getDb();
 
     // 3. Preparar o novo item
     const newItem: any = {
@@ -55,7 +26,9 @@ export async function POST(request: NextRequest) {
         ? `https://image.tmdb.org/t/p/w1280${data.backdrop_path}`
         : '',
       genre_ids: data.genre_ids
-        ? data.genre_ids.split(',').map((id: string) => parseInt(id.trim()))
+        ? (typeof data.genre_ids === 'string' 
+            ? data.genre_ids.split(',').map((id: string) => parseInt(id.trim()))
+            : data.genre_ids)
         : [],
       id: parseInt(data.id),
       original_language: data.original_language || 'pt',
@@ -69,13 +42,22 @@ export async function POST(request: NextRequest) {
       vote_count: parseInt(data.vote_count) || 0,
     };
 
-    // Adicionar campos específicos por tipo
-    if (type === 'filmes') {
+  // Adicionar campos específicos por tipo
+  if (type === 'filmes') {
       newItem.original_title = data.original_title || data.title;
       newItem.release_date = data.release_date || '';
       newItem.title = data.title;
-      newItem.video = data.video || '';
-      newItem.URLvideo = data.video || '';
+      newItem.tmdb = String(data.id);
+      
+      // Se tiver URLTxt, prioriza ele e limpa os campos de vídeo originais conforme solicitado
+      if (data.URLTxt) {
+        newItem.URLTxt = data.URLTxt;
+        newItem.video = "";
+        newItem.URLvideo = "";
+      } else {
+        newItem.video = data.video || '';
+        newItem.URLvideo = data.video || '';
+      }
     } else {
       // Séries e Animes
       newItem.original_name = data.original_name || data.name;
@@ -83,26 +65,54 @@ export async function POST(request: NextRequest) {
       newItem.name = data.name;
       newItem.video = null;
 
-      // Adicionar temporadas
-      if (data.temporadas && Object.keys(data.temporadas).length > 0) {
-        Object.assign(newItem, data.temporadas);
+      // Normalizar temporadas -> seasons: [{ number, episodes: [{ number, url }] }]
+      // Aceita duas formas de entrada comuns: "temporadas" (obj) ou "seasons" (array)
+      const seasons: any[] = [];
+
+      if (Array.isArray(data.seasons) && data.seasons.length > 0) {
+        for (const s of data.seasons) {
+          const episodes = (s.episodes || []).map((ep: any) => ({ number: ep.number ?? ep.episode_number ?? 1, url: ep.url || ep.file || '' }));
+          seasons.push({ number: s.number ?? s.season_number ?? 1, episodes });
+        }
+      } else if (data.temporadas && typeof data.temporadas === 'object') {
+        // Ex: temporadas: { '1': { '1': 'url', '2': 'url' }, '2': { ... } }
+        for (const key of Object.keys(data.temporadas)) {
+          const seasonNumber = parseInt(key, 10);
+          const epsObj = data.temporadas[key] || {};
+          const episodes: any[] = [];
+          for (const eKey of Object.keys(epsObj)) {
+            const epNumber = parseInt(eKey, 10);
+            episodes.push({ number: epNumber, url: epsObj[eKey] });
+          }
+          // ordenar por number
+          episodes.sort((a, b) => a.number - b.number);
+          seasons.push({ number: seasonNumber, episodes });
+        }
+        seasons.sort((a, b) => a.number - b.number);
+      }
+
+      if (seasons.length > 0) {
+        newItem.seasons = seasons;
       }
     }
 
-    // 4. Verificar se já existe (por TMDB ID)
-    if (!json.pages || !json.pages[0] || !json.pages[0].results) {
-      return NextResponse.json(
-        { error: 'Estrutura de JSON inválida' },
-        { status: 400 }
-      );
+    // Escolher coleção com base no tipo e na presença de seasons
+    let collectionName = 'filmes';
+    if (type === 'filmes') collectionName = 'filmes';
+    else if (type === 'series') collectionName = 'series';
+    else if (type === 'animes') {
+      if (newItem.seasons && Array.isArray(newItem.seasons) && newItem.seasons.length > 0) {
+        collectionName = 'animes_series';
+      } else {
+        collectionName = 'animes_filmes';
+      }
     }
 
-    // Verificar duplicatas em todas as páginas
-    const exists = json.pages.some((page: any) =>
-      page.results.some((item: any) => item.id === newItem.id)
-    );
+    const col = db.collection(collectionName);
 
-    if (exists) {
+    // Verificar duplicata no Mongo
+    const existing = await col.findOne({ id: newItem.id });
+    if (existing) {
       const itemName = type === 'filmes' ? data.title : data.name;
       return NextResponse.json(
         {
@@ -110,31 +120,19 @@ export async function POST(request: NextRequest) {
           message: `${type === 'filmes' ? 'Filme' : type === 'series' ? 'Série' : 'Anime'} "${itemName}" já existe no banco de dados!`,
           tmdb_id: newItem.id,
         },
-        { status: 409 } // 409 Conflict
+        { status: 409 }
       );
     }
 
-    json.pages[0].results.unshift(newItem); // Adiciona no início
-
-    // 5. Fazer commit
-    const commitMessage =
-      type === 'filmes'
-        ? `Adicionar filme: ${data.title}`
-        : `Adicionar ${type === 'series' ? 'série' : 'anime'}: ${data.name}`;
-
-    await octokit.repos.createOrUpdateFileContents({
-      owner: GITHUB_OWNER,
-      repo: GITHUB_REPO,
-      path: fileName,
-      message: commitMessage,
-      content: Buffer.from(JSON.stringify(json, null, 2)).toString('base64'),
-      sha: fileData.sha,
-    });
+    // Salvar no Mongo (upsert)
+    const docToSave = { ...newItem, tmdb: newItem.tmdb || String(newItem.id) };
+    await col.updateOne({ id: newItem.id }, { $set: docToSave }, { upsert: true });
 
     return NextResponse.json({
       success: true,
       message: `${type === 'filmes' ? 'Filme' : type === 'series' ? 'Série' : 'Anime'} adicionado com sucesso!`,
       item: newItem,
+      savedToMongo: true,
     });
   } catch (error: any) {
     console.error('Erro ao adicionar mídia:', error);
@@ -143,4 +141,21 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+// Suporte para GET: informar que apenas POST é permitido
+export async function GET(request: NextRequest) {
+  return NextResponse.json({ message: 'Use POST /api/admin/add-media com body { type, data } para adicionar mídia' });
+}
+
+// Suporte para OPTIONS (CORS preflight)
+export async function OPTIONS(request: NextRequest) {
+  return new NextResponse(null, {
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    },
+  })
 }

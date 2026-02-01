@@ -34,6 +34,7 @@ interface FormData {
   original_name: string
   video: string
   URLvideo: string
+  URLTxt?: string | null
   poster_path: string
   backdrop_path: string
   overview: string
@@ -61,6 +62,11 @@ export default function AdminPage() {
   const [showResults, setShowResults] = useState(false)
   const [editingItem, setEditingItem] = useState<any>(null)
 
+  // StreamP2P files modal
+  const [streamp2pFiles, setStreamp2pFiles] = useState<any[]>([])
+  const [showFilesModal, setShowFilesModal] = useState(false)
+  const [loadingFiles, setLoadingFiles] = useState(false)
+
   const handleLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' })
     router.push('/admin/login')
@@ -75,6 +81,7 @@ export default function AdminPage() {
     original_name: "",
     video: "",
     URLvideo: "",
+  URLTxt: null,
     poster_path: "",
     backdrop_path: "",
     overview: "",
@@ -186,6 +193,7 @@ export default function AdminPage() {
       setFormData({
         ...formData,
         id: String(data.id),
+  URLTxt: data.URLTxt || formData.URLTxt,
         title: data.title || formData.title,
         name: data.name || formData.name,
         original_title: data.original_title || formData.original_title,
@@ -210,6 +218,49 @@ export default function AdminPage() {
     } finally {
       setLoadingTMDB(false)
     }
+  }
+
+  const fetchStreamP2PFiles = async () => {
+    setLoadingFiles(true)
+    setMessage("")
+    try {
+      const res = await fetch('/api/admin/streamp2p/list-files')
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Erro desconhecido' }))
+        throw new Error(err.error || 'Falha ao buscar arquivos')
+      }
+      const json = await res.json()
+      setStreamp2pFiles(json.files || [])
+      setShowFilesModal(true)
+      if ((json.files || []).length === 0) setMessage('⚠️ Nenhum arquivo encontrado no StreamP2P')
+    } catch (e: any) {
+      setMessage(`❌ Erro ao buscar arquivos StreamP2P: ${e.message}`)
+    } finally {
+      setLoadingFiles(false)
+    }
+  }
+
+  const importStreamP2PFile = (file: any) => {
+    // Preencher campo de vídeo com a url disponível (url, path ou name)
+    const candidate = file.url || file.path || file.name || ''
+    setFormData({ ...formData, video: candidate, URLvideo: candidate, URLTxt: candidate })
+    setShowFilesModal(false)
+    setMessage('✅ Arquivo importado para o formulário')
+  }
+
+  const [showJson, setShowJson] = useState(false)
+
+  const importAllFiles = () => {
+    if (!streamp2pFiles || streamp2pFiles.length === 0) {
+      setMessage('⚠️ Não há arquivos para importar')
+      return
+    }
+    // Preencher com o primeiro arquivo como atalho; podemos ajustar para múltiplos se desejar
+    const first = streamp2pFiles[0]
+    const candidate = first.url || first.path || first.name || ''
+    setFormData({ ...formData, video: candidate, URLvideo: candidate, URLTxt: candidate })
+    setShowFilesModal(false)
+    setMessage(`✅ Importado 1 de ${streamp2pFiles.length} arquivos (atalho).`) 
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -289,6 +340,15 @@ export default function AdminPage() {
             <PlusIcon className="w-5 h-5" />
             Adicionar Novo
           </button>
+           
+              <button
+                onClick={fetchStreamP2PFiles}
+                className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-md"
+                disabled={loadingFiles}
+              >
+                {loadingFiles ? 'Buscando...' : 'Buscar arquivos StreamP2P'}
+              </button>
+            
         </div>
 
         {/* Tabs */}
@@ -311,6 +371,8 @@ export default function AdminPage() {
               activeTab={activeTab}
             />
 
+         
+
             {/* Search Results */}
             {showResults && searchResults.length > 0 && (
               <SearchResults results={searchResults} onSelectResult={selectResult} loadingTMDB={loadingTMDB} />
@@ -326,6 +388,53 @@ export default function AdminPage() {
                 loading={loading}
                 loadingTMDB={loadingTMDB}
               />
+            )}
+
+            {/* StreamP2P files modal */}
+            {showFilesModal && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+                <div className="w-11/12 md:w-3/4 lg:w-2/3 bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold">Arquivos StreamP2P</h3>
+                    <div className="flex items-center gap-2">
+                      <button onClick={fetchStreamP2PFiles} className="px-3 py-1 bg-zinc-800 rounded">Recarregar</button>
+                      <button onClick={() => setShowJson(s => !s)} className="px-3 py-1 bg-zinc-800 rounded">{showJson ? 'Esconder JSON' : 'Mostrar JSON'}</button>
+                      <button onClick={importAllFiles} className="px-3 py-1 bg-blue-700 rounded text-white">Importar todos</button>
+                      <button onClick={() => setShowFilesModal(false)} className="px-3 py-1 bg-zinc-800 rounded">Fechar</button>
+                    </div>
+                  </div>
+
+                  <div className="max-h-96 overflow-auto">
+                    <table className="w-full table-auto text-left">
+                      <thead>
+                        <tr className="text-sm text-zinc-400">
+                          <th className="p-2">Nome</th>
+                          <th className="p-2">URL / Path</th>
+                          <th className="p-2">Criado Em</th>
+                          <th className="p-2">Ações</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {streamp2pFiles.map((f, idx) => (
+                          <tr key={idx} className="border-t border-zinc-800">
+                            <td className="p-2 align-top text-sm">{f.name || f.path || f.url}</td>
+                            <td className="p-2 align-top text-sm break-all">{f.url || f.path || f.name}</td>
+                            <td className="p-2 align-top text-sm">{f.createdAt || f.created_at || '-'}</td>
+                            <td className="p-2 align-top text-sm">
+                              <button onClick={() => importStreamP2PFile(f)} className="px-2 py-1 bg-blue-600 rounded text-white">Importar</button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {showJson && (
+                    <div className="mt-3 p-3 bg-zinc-900 border border-zinc-800 rounded text-sm max-h-80 overflow-auto">
+                      <pre className="whitespace-pre-wrap">{JSON.stringify(streamp2pFiles, null, 2)}</pre>
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
           </>
         )}

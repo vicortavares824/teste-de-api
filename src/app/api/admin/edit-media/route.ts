@@ -73,7 +73,7 @@ export async function PUT(req: NextRequest) {
       if (itemIndex !== -1) {
         // Manter a estrutura correta dependendo do tipo
         if (type === "filmes") {
-          page.results[itemIndex] = {
+          const newItem = {
             ...page.results[itemIndex],
             ...updatedData,
             id: Number(updatedData.id),
@@ -82,6 +82,14 @@ export async function PUT(req: NextRequest) {
             popularity: Number(updatedData.popularity),
             adult: Boolean(updatedData.adult),
           }
+
+          // Se tiver URLTxt, limpa os campos de vídeo originais
+          if (updatedData.URLTxt) {
+            newItem.video = "";
+            newItem.URLvideo = "";
+          }
+
+          page.results[itemIndex] = newItem
         } else {
           // Para séries e animes
           page.results[itemIndex] = {

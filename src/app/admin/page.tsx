@@ -240,12 +240,88 @@ export default function AdminPage() {
     }
   }
 
-  const importStreamP2PFile = (file: any) => {
-    // Preencher campo de vídeo com a url disponível (url, path ou name)
-    const candidate = file.url || file.path || file.name || ''
-    setFormData({ ...formData, video: candidate, URLvideo: candidate, URLTxt: candidate })
+  const importStreamP2PFile = async (file: any) => {
+    setMessage('🔄 Processando arquivo StreamP2P...')
     setShowFilesModal(false)
-    setMessage('✅ Arquivo importado para o formulário')
+    setLoadingTMDB(true)
+    
+    try {
+      // 1. Pegar o ID do arquivo
+      const fileId = file.id || file.name || ''
+      if (!fileId) {
+        throw new Error('ID do arquivo não encontrado')
+      }
+
+      const fileName = file.name || fileId
+      
+      // 2. Montar a URL base
+      const streamP2pUrl = `https://cinestreamtent.strp2p.live/#${fileId}`
+      
+      // 3. Tentar buscar o arquivo .txt (manifest/playlist)
+      let m3u8Url = streamP2pUrl
+     
+
+      // 4. Buscar informações na TMDB usando o título
+      setMessage(`🔍 Buscando "${fileName}" na TMDB...`)
+      
+      const searchResponse = await fetch(`/api/admin/search-tmdb?query=${encodeURIComponent(fileName)}&type=${activeTab === "filmes" ? "movie" : "tv"}`)
+      
+      if (!searchResponse.ok) {
+        throw new Error('Erro ao buscar na TMDB')
+      }
+
+      const searchData = await searchResponse.json()
+      
+      if (!searchData.results || searchData.results.length === 0) {
+        throw new Error(`Nenhum resultado encontrado para "${fileName}" na TMDB`)
+      }
+
+      // Pega o primeiro resultado
+      const firstResult = searchData.results[0]
+      setMessage(`📺 Carregando dados de "${firstResult.title || firstResult.name}" da TMDB...`)
+
+      // 5. Buscar dados completos do TMDB
+      const mediaType = activeTab === "filmes" ? "movie" : "tv"
+      const tmdbResponse = await fetch(`/api/admin/fetch-tmdb?id=${firstResult.id}&type=${mediaType}`)
+
+      if (!tmdbResponse.ok) {
+        throw new Error('Erro ao carregar dados completos do TMDB')
+      }
+
+      const tmdbData = await tmdbResponse.json()
+
+      // 6. Preencher o formulário com todos os dados
+      setFormData({
+        ...formData,
+        id: String(tmdbData.id),
+        title: tmdbData.title || formData.title,
+        name: tmdbData.name || formData.name,
+        original_title: tmdbData.original_title || formData.original_title,
+        original_name: tmdbData.original_name || formData.original_name,
+        poster_path: tmdbData.poster_path,
+        backdrop_path: tmdbData.backdrop_path,
+        overview: tmdbData.overview,
+        release_date: tmdbData.release_date || formData.release_date,
+        first_air_date: tmdbData.first_air_date || formData.first_air_date,
+        vote_average: String(tmdbData.vote_average),
+        vote_count: String(tmdbData.vote_count),
+        popularity: String(tmdbData.popularity),
+        genre_ids: tmdbData.genre_ids.join(", "),
+        original_language: tmdbData.original_language,
+        adult: tmdbData.adult,
+        video: fileName,
+        URLvideo: m3u8Url,
+        URLTxt: streamP2pUrl,
+      })
+
+      setMessage(`✅ Arquivo "${fileName}" importado com sucesso! Todos os dados da TMDB foram carregados.`)
+      setSearchQuery("")
+    } catch (error: any) {
+      setMessage(`❌ Erro ao processar arquivo: ${error.message}`)
+      setShowFilesModal(true)
+    } finally {
+      setLoadingTMDB(false)
+    }
   }
 
   const [showJson, setShowJson] = useState(false)

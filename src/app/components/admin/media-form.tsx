@@ -171,6 +171,33 @@ export function MediaForm({ formData, onFormDataChange, onSubmit, activeTab, loa
           {activeTab === "filmes" ? formData.title : formData.name}
         </h3>
         <p className="text-foreground leading-relaxed">{formData.overview}</p>
+        
+        {/* StreamP2P Info */}
+        {(formData.video || formData.URLTxt) && (
+          <div className="mt-4 pt-4 border-t border-border space-y-2">
+            <p className="text-xs font-semibold text-muted-foreground">📦 Dados StreamP2P</p>
+            {formData.video && (
+              <div className="text-xs">
+                <span className="text-muted-foreground">Arquivo: </span>
+                <span className="text-foreground font-mono">{formData.video}</span>
+              </div>
+            )}
+            {formData.URLTxt && (
+              <div className="text-xs">
+                <span className="text-muted-foreground">URL Base: </span>
+                <a href={formData.URLTxt} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline font-mono break-all">
+                  {formData.URLTxt}
+                </a>
+              </div>
+            )}
+            {formData.URLvideo && formData.URLvideo !== formData.URLTxt && (
+              <div className="text-xs">
+                <span className="text-muted-foreground">URL m3u8: </span>
+                <span className="text-foreground font-mono break-all text-[10px]">{formData.URLvideo.substring(0, 50)}...</span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Video URL for Movies */}
@@ -259,7 +286,8 @@ export function MediaForm({ formData, onFormDataChange, onSubmit, activeTab, loa
                       }
                       const proxiedUrl = (await proxyRes.text()).trim()
                       // substituir o input principal de adicionar filme (video) com o m3u8
-                      onFormDataChange({ ...formData, video: proxiedUrl, URLvideo: proxiedUrl })
+                      // E também atualizar o campo txtUrl com o resultado
+                      onFormDataChange({ ...formData, video: proxiedUrl, URLvideo: proxiedUrl, txtUrl: proxiedUrl })
                       setPublishResult({ URLvideo: proxiedUrl, note: 'm3u8 obtido via proxy' })
                       toast({ title: 'm3u8 obtido', description: 'm3u8 definido como URL principal para adicionar o filme.' })
                     } catch (err) {
@@ -284,13 +312,13 @@ export function MediaForm({ formData, onFormDataChange, onSubmit, activeTab, loa
                   <input
                     type="text"
                     readOnly
-                    value={(formData.video && formData.video.trim()) || (formData.URLTxt && formData.URLTxt.trim()) || ''}
+                    value={formData.URLvideo && formData.URLvideo.includes('.m3u8') ? formData.URLvideo : ''}
                     className="flex-1 bg-muted/30 border border-border rounded-md px-3 py-2 text-sm text-foreground"
                   />
                   <button
                     type="button"
                     onClick={() => {
-                      const v = (formData.video && formData.video.trim()) || (formData.URLTxt && formData.URLTxt.trim()) || ''
+                      const v = formData.URLvideo && formData.URLvideo.includes('.m3u8') ? formData.URLvideo : ''
                       if (v) {
                         navigator.clipboard?.writeText(v)
                         toast({ title: 'Copiado', description: 'URL m3u8 copiada para a área de transferência' })

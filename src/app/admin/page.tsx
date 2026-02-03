@@ -153,6 +153,26 @@ export default function AdminPage() {
     setEditingItem(null)
   }
 
+  // Função helper para normalizar nomes (remove pontos, hifens, anos, qualidade, extensões)
+  const normalizeName = (name: string): string => {
+    return name
+      .toLowerCase()
+      .trim()
+      // Remover extensões de arquivo
+      .replace(/\.(mkv|mp4|avi|mov|wmv|flv|webm)$/i, '')
+      // Remover informações de qualidade, ano e codec
+      .replace(/\.(19|20)\d{2}\..*$/i, '') // Remove .2024.1080p.WEB-DL.DUAL etc
+      .replace(/\.(1080p|720p|480p|4k|hd|web-dl|bluray|dvdrip|dual|nacional).*$/i, '')
+      .replace(/\.5\.1.*$/i, '') // Remove .5.1.mkv
+      // Remover anos entre parênteses
+      .replace(/\s*\((19|20)\d{2}\)\s*/g, ' ')
+      // Substituir pontos, hifens e underscores por espaços
+      .replace(/[.\-_]/g, ' ')
+      // Remover espaços extras
+      .replace(/\s+/g, ' ')
+      .trim()
+  }
+
   const searchByTitle = async () => {
     if (!searchQuery.trim()) {
       setMessage("⚠️ Digite um título para pesquisar")
@@ -353,14 +373,14 @@ export default function AdminPage() {
       // 2. Montar a URL base
       const streamP2pUrl = `https://cinestreamtent.strp2p.live/#${fileId}`
       
-      // 3. Tentar buscar o arquivo .txt (manifest/playlist)
+      // 3. Normalizar o nome para busca no TMDB
+      const normalizedName = normalizeName(fileName)
+      const searchName = normalizedName || fileName // fallback para nome original se normalização falhar
 
-     
-
-      // 4. Buscar informações na TMDB usando o título
-      setMessage(`🔍 Buscando "${fileName}" na TMDB...`)
+      // 4. Buscar informações na TMDB usando o título normalizado
+      setMessage(`🔍 Buscando "${searchName}" na TMDB...`)
       
-      const searchResponse = await fetch(`/api/admin/search-tmdb?query=${encodeURIComponent(fileName)}&type=${activeTab === "filmes" ? "movie" : "tv"}`)
+      const searchResponse = await fetch(`/api/admin/search-tmdb?query=${encodeURIComponent(searchName)}&type=${activeTab === "filmes" ? "movie" : "tv"}`)
       
       if (!searchResponse.ok) {
         throw new Error('Erro ao buscar na TMDB')
@@ -369,7 +389,7 @@ export default function AdminPage() {
       const searchData = await searchResponse.json()
       
       if (!searchData.results || searchData.results.length === 0) {
-        throw new Error(`Nenhum resultado encontrado para "${fileName}" na TMDB`)
+        throw new Error(`Nenhum resultado encontrado para "${searchName}" na TMDB`)
       }
 
       // Pega o primeiro resultado

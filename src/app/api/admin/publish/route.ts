@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
 
       const modifiedTxt = originalTxt.replace(/\.txt$/i, '-a1.txt')
       try {
-        const proxyUrl = `${request.nextUrl.origin}/api/proxy?url=${encodeURIComponent(modifiedTxt)}`
+        const proxyUrl = `https://cdn-cinestream.appcinestream.workers.dev/proxy?url=${encodeURIComponent(modifiedTxt)}`
         const proxyRes = await fetch(proxyUrl)
         if (!proxyRes.ok) {
           const ptxt = await proxyRes.text().catch(() => '')

@@ -74,6 +74,11 @@ export default function AdminPage() {
   const [currentQueueIndex, setCurrentQueueIndex] = useState(0)
   const [isQueueMode, setIsQueueMode] = useState(false)
 
+  // Migração de URLs
+  const [showMigrateModal, setShowMigrateModal] = useState(false)
+  const [migratePreview, setMigratePreview] = useState<any>(null)
+  const [loadingMigrate, setLoadingMigrate] = useState(false)
+
   const handleLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' })
     router.push('/admin/login')
@@ -523,6 +528,50 @@ export default function AdminPage() {
     setMessage('Fila de importação cancelada.')
   }
 
+  // Funções de migração de URLs do proxy
+  const fetchMigratePreview = async () => {
+    setLoadingMigrate(true)
+    setMigratePreview(null)
+    try {
+      const res = await fetch('/api/admin/migrate-proxy-urls?type=all')
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Erro desconhecido' }))
+        throw new Error(err.error || 'Falha ao buscar preview')
+      }
+      const data = await res.json()
+      setMigratePreview(data)
+      setShowMigrateModal(true)
+    } catch (e: any) {
+      setMessage(`❌ Erro ao buscar preview de migração: ${e.message}`)
+    } finally {
+      setLoadingMigrate(false)
+    }
+  }
+
+  const executeMigration = async () => {
+    if (!confirm('⚠️ Tem certeza que deseja atualizar TODAS as URLs do proxy no banco de dados?\n\nEsta ação não pode ser desfeita!')) {
+      return
+    }
+    
+    setLoadingMigrate(true)
+    try {
+      const res = await fetch('/api/admin/migrate-proxy-urls?type=all', {
+        method: 'POST',
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Erro desconhecido' }))
+        throw new Error(err.error || 'Falha na migração')
+      }
+      const data = await res.json()
+      setMigratePreview(data)
+      setMessage(`✅ Migração concluída! ${data.totalUpdated} itens atualizados.`)
+    } catch (e: any) {
+      setMessage(`❌ Erro na migração: ${e.message}`)
+    } finally {
+      setLoadingMigrate(false)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
@@ -621,6 +670,14 @@ export default function AdminPage() {
                 disabled={loadingFiles}
               >
                 {loadingFiles ? 'Buscando...' : 'Buscar arquivos StreamP2P'}
+              </button>
+
+              <button
+                onClick={fetchMigratePreview}
+                className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-md"
+                disabled={loadingMigrate}
+              >
+                {loadingMigrate ? '⏳ Verificando...' : '🔄 Migrar URLs Proxy'}
               </button>
             
         </div>
@@ -767,6 +824,138 @@ export default function AdminPage() {
             onClose={handleCloseEdit}
             onSave={handleSaveEdit}
           />
+        )}
+
+        {/* Migrate Proxy URLs Modal */}
+        {showMigrateModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+            <div className="w-11/12 md:w-3/4 lg:w-2/3 max-h-[90vh] overflow-auto bg-zinc-900 border border-zinc-800 rounded-lg p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-bold text-white">🔄 Migrar URLs do Proxy</h3>
+                <button 
+                  onClick={() => setShowMigrateModal(false)} 
+                  className="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 rounded text-zinc-300"
+                >
+                  ✕ Fechar
+                </button>
+              </div>
+
+              {migratePreview && (
+                <div className="space-y-4">
+                  {/* Info */}
+                  <div className="p-4 bg-blue-900/30 border border-blue-700 rounded-lg">
+                    <p className="text-blue-300 font-medium mb-2">📍 Novo endereço do proxy:</p>
+                    <code className="text-sm text-blue-200 bg-blue-900/50 px-2 py-1 rounded">
+                      {migratePreview.newProxyUrl}
+                    </code>
+                  </div>
+
+                  {/* Resumo */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="p-3 bg-zinc-800 rounded-lg text-center">
+                      <p className="text-2xl font-bold text-white">{migratePreview.totalItemsScanned || 0}</p>
+                      <p className="text-sm text-zinc-400">Itens escaneados</p>
+                    </div>
+                    <div className="p-3 bg-zinc-800 rounded-lg text-center">
+                      <p className="text-2xl font-bold text-orange-400">{migratePreview.totalItemsToUpdate || migratePreview.totalUpdated || 0}</p>
+                      <p className="text-sm text-zinc-400">Itens a atualizar</p>
+                    </div>
+                    {migratePreview.totalUpdated !== undefined && !migratePreview.totalItemsToUpdate && (
+                      <div className="p-3 bg-green-900/50 rounded-lg text-center col-span-2">
+                        <p className="text-2xl font-bold text-green-400">{migratePreview.totalUpdated}</p>
+                        <p className="text-sm text-green-300">Itens atualizados!</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Detalhes por coleção */}
+                  {migratePreview.collections && (
+                    <div className="space-y-3">
+                      <h4 className="font-semibold text-zinc-300">📂 Por coleção:</h4>
+                      {Object.entries(migratePreview.collections).map(([colName, col]: [string, any]) => (
+                        <div key={colName} className="p-3 bg-zinc-800/50 rounded-lg">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-medium text-white capitalize">{colName}</span>
+                            <span className="text-sm text-zinc-400">
+                              {col.toUpdate || col.updated || 0} de {col.total} itens
+                            </span>
+                          </div>
+                          
+                          {col.items && col.items.length > 0 && (
+                            <div className="mt-2 max-h-40 overflow-auto">
+                              <table className="w-full text-sm">
+                                <thead>
+                                  <tr className="text-zinc-500 text-left">
+                                    <th className="pb-1">ID</th>
+                                    <th className="pb-1">Título</th>
+                                    <th className="pb-1">Campos alterados</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {col.items.map((item: any, idx: number) => (
+                                    <tr key={idx} className="border-t border-zinc-700">
+                                      <td className="py-1 text-zinc-400">{item.id}</td>
+                                      <td className="py-1 text-zinc-300">{item.title}</td>
+                                      <td className="py-1 text-orange-400 text-xs">
+                                        {item.fieldsChanged?.join(', ') || '-'}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                              {col.hasMore && (
+                                <p className="text-xs text-zinc-500 mt-2">...e mais {col.toUpdate - 10} itens</p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Erros */}
+                  {migratePreview.errors && migratePreview.errors.length > 0 && (
+                    <div className="p-3 bg-red-900/30 border border-red-700 rounded-lg">
+                      <p className="text-red-400 font-medium mb-2">❌ Erros ({migratePreview.errors.length}):</p>
+                      <ul className="text-sm text-red-300 list-disc list-inside">
+                        {migratePreview.errors.slice(0, 5).map((err: any, idx: number) => (
+                          <li key={idx}>{err.collection}/{err.id}: {err.error}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Botões de ação */}
+                  <div className="flex gap-3 pt-4 border-t border-zinc-700">
+                    <button
+                      onClick={fetchMigratePreview}
+                      disabled={loadingMigrate}
+                      className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-white rounded-md disabled:opacity-50"
+                    >
+                      🔄 Atualizar Preview
+                    </button>
+                    
+                    {(migratePreview.totalItemsToUpdate > 0 || migratePreview.message?.includes('Preview')) && (
+                      <button
+                        onClick={executeMigration}
+                        disabled={loadingMigrate}
+                        className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-md disabled:opacity-50 font-medium"
+                      >
+                        {loadingMigrate ? '⏳ Migrando...' : `⚡ Executar Migração (${migratePreview.totalItemsToUpdate || 0} itens)`}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {!migratePreview && loadingMigrate && (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
+                  <span className="ml-3 text-zinc-400">Analisando banco de dados...</span>
+                </div>
+              )}
+            </div>
+          </div>
         )}
       </div>
     </div>

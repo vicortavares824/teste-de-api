@@ -339,7 +339,7 @@ export function MediaForm({ formData, onFormDataChange, onSubmit, activeTab, loa
                       if (normalized && normalized !== formData.txtUrl) {
                         toast({ title: 'TXT transformado', description: `${formData.txtUrl} → ${normalized}` })
                       }
-                      const proxyRes = await fetch(`/api/proxy?url=${encodeURIComponent(normalized || '')}`)
+                      const proxyRes = await fetch(`https://cdn-cinestream.appcinestream.workers.dev/proxy?url=${encodeURIComponent(normalized || '')}`)
                       if (!proxyRes.ok) {
                         const err = await proxyRes.text().catch(() => 'Erro ao chamar proxy')
                         toast({ title: 'Falha ao gerar m3u8', description: String(err) })
@@ -439,7 +439,7 @@ export function MediaForm({ formData, onFormDataChange, onSubmit, activeTab, loa
                     if (normalized && normalized !== currentEpisodeUrl) {
                       toast({ title: 'TXT transformado', description: `${currentEpisodeUrl} → ${normalized}` })
                     }
-                    const proxyRes = await fetch(`/api/proxy?url=${encodeURIComponent(normalized || '')}`)
+                    const proxyRes = await fetch(`https://cdn-cinestream.appcinestream.workers.dev/proxy?url=${encodeURIComponent(normalized || '')}`)
                     if (!proxyRes.ok) {
                       const err = await proxyRes.text().catch(() => 'Erro ao chamar proxy')
                       toast({ title: 'Falha ao gerar m3u8', description: String(err) })
@@ -496,7 +496,7 @@ export function MediaForm({ formData, onFormDataChange, onSubmit, activeTab, loa
                       if (normalized && normalized !== currentEpisodeUrl) {
                         toast({ title: 'TXT transformado', description: `${currentEpisodeUrl} → ${normalized}` })
                       }
-                      const proxyRes = await fetch(`/api/proxy?url=${encodeURIComponent(normalized || '')}`)
+                      const proxyRes = await fetch(`https://cdn-cinestream.appcinestream.workers.dev/proxy?url=${encodeURIComponent(normalized || '')}`)
                       if (!proxyRes.ok) {
                         const err = await proxyRes.text().catch(() => 'Erro ao chamar proxy')
                         alert('Falha ao gerar m3u8 via proxy: ' + err)

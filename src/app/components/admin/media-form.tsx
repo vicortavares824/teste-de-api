@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useToast } from '../../../hooks/use-toast'
 import { PlayIcon } from "@heroicons/react/24/outline"
 import { ClipboardIcon } from '@heroicons/react/24/outline'
@@ -42,9 +42,11 @@ interface MediaFormProps {
   activeTab: MediaType
   loading: boolean
   loadingTMDB: boolean
+  isQueueMode?: boolean
+  onQueueNext?: () => void
 }
 
-export function MediaForm({ formData, onFormDataChange, onSubmit, activeTab, loading, loadingTMDB }: MediaFormProps) {
+export function MediaForm({ formData, onFormDataChange, onSubmit, activeTab, loading, loadingTMDB, isQueueMode, onQueueNext }: MediaFormProps) {
   const [currentSeason, setCurrentSeason] = useState("")
   const [currentEpisode, setCurrentEpisode] = useState("")
   const [currentEpisodeUrl, setCurrentEpisodeUrl] = useState("")
@@ -54,6 +56,23 @@ export function MediaForm({ formData, onFormDataChange, onSubmit, activeTab, loa
   const [publishResult, setPublishResult] = useState<any>(null)
   const [showPlayerIframe, setShowPlayerIframe] = useState(false)
   const { toast } = useToast()
+
+  // Quando o formData.id mudar (novo item carregado), resetar estados internos e abrir player automaticamente no modo fila
+  useEffect(() => {
+    // Resetar estados internos do formulário
+    setCurrentSeason("")
+    setCurrentEpisode("")
+    setCurrentEpisodeUrl("")
+    setEpisodeMessage("")
+    setPublishResult(null)
+    
+    // No modo fila, abrir o player automaticamente se houver URLTxt
+    if (isQueueMode && formData.URLTxt) {
+      setShowPlayerIframe(true)
+    } else {
+      setShowPlayerIframe(false)
+    }
+  }, [formData.id, isQueueMode, formData.URLTxt])
 
   // Normaliza URLs de index-...-a1.txt substituindo -f<N>- por -f1- (ex: index-f2-v1-a1.txt -> index-f1-v1-a1.txt)
   const normalizeTxtIndex = (rawUrl: string | null | undefined) => {
@@ -516,10 +535,29 @@ export function MediaForm({ formData, onFormDataChange, onSubmit, activeTab, loa
             <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-current" />
             Enviando...
           </>
+        ) : isQueueMode ? (
+          "💾 Salvar e Próximo"
         ) : (
           "Adicionar " + (activeTab === "filmes" ? "Filme" : activeTab === "series" ? "Série" : "Anime")
         )}
       </button>
+
+      {/* Botão pular no modo fila */}
+      {isQueueMode && onQueueNext && (
+        <button
+          type="button"
+          onClick={() => {
+            // limpar campos de URL e fechar player antes de avançar
+            onFormDataChange({ ...formData, URLvideo: "", URLTxt: "", txtUrl: "", videoStreamp: "" })
+            setShowPlayerIframe(false)
+            // pequeno delay para garantir atualização visual
+            setTimeout(() => onQueueNext && onQueueNext(), 100)
+          }}
+          className="w-full py-3 mt-2 rounded-md font-semibold transition-all flex items-center justify-center gap-2 bg-yellow-600 hover:bg-yellow-700 text-white"
+        >
+          ⏭️ Pular este item
+        </button>
+      )}
     </form>
   )
 }

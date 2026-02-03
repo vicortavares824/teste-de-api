@@ -35,6 +35,8 @@ interface FormData {
   video: string
   URLvideo: string
   URLTxt?: string | null
+  txtUrl?: string | null
+  videoStreamp?: string | null
   poster_path: string
   backdrop_path: string
   overview: string
@@ -66,6 +68,11 @@ export default function AdminPage() {
   const [streamp2pFiles, setStreamp2pFiles] = useState<any[]>([])
   const [showFilesModal, setShowFilesModal] = useState(false)
   const [loadingFiles, setLoadingFiles] = useState(false)
+  
+  // Fila de importação sequencial
+  const [importQueue, setImportQueue] = useState<any[]>([])
+  const [currentQueueIndex, setCurrentQueueIndex] = useState(0)
+  const [isQueueMode, setIsQueueMode] = useState(false)
 
   const handleLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' })
@@ -81,7 +88,9 @@ export default function AdminPage() {
     original_name: "",
     video: "",
     URLvideo: "",
-  URLTxt: null,
+  URLTxt: "",
+  txtUrl: "",
+  videoStreamp: "",
     poster_path: "",
     backdrop_path: "",
     overview: "",
@@ -105,6 +114,9 @@ export default function AdminPage() {
       original_name: "",
       video: "",
       URLvideo: "",
+  URLTxt: "",
+  txtUrl: "",
+  videoStreamp: "",
       poster_path: "",
       backdrop_path: "",
       overview: "",
@@ -346,27 +358,31 @@ export default function AdminPage() {
 
       const tmdbData = await tmdbResponse.json()
 
-      // 6. Preencher o formulário com todos os dados TMDB (sem mexer em URLvideo, mas adiciona URLTxt com o link StreamP2P)
+      // 6. Preencher o formulário com todos os dados TMDB e limpar campos de URL antigos
       setFormData({
-        ...formData,
         id: String(tmdbData.id),
-        title: tmdbData.title || formData.title,
-        name: tmdbData.name || formData.name,
-        original_title: tmdbData.original_title || formData.original_title,
-        original_name: tmdbData.original_name || formData.original_name,
-        poster_path: tmdbData.poster_path,
-        backdrop_path: tmdbData.backdrop_path,
-        overview: tmdbData.overview,
-        release_date: tmdbData.release_date || formData.release_date,
-        first_air_date: tmdbData.first_air_date || formData.first_air_date,
-        vote_average: String(tmdbData.vote_average),
-        vote_count: String(tmdbData.vote_count),
-        popularity: String(tmdbData.popularity),
-        genre_ids: tmdbData.genre_ids.join(", "),
-        original_language: tmdbData.original_language,
-        adult: tmdbData.adult,
+        title: tmdbData.title || "",
+        name: tmdbData.name || "",
+        original_title: tmdbData.original_title || "",
+        original_name: tmdbData.original_name || "",
+        poster_path: tmdbData.poster_path || "",
+        backdrop_path: tmdbData.backdrop_path || "",
+        overview: tmdbData.overview || "",
+        release_date: tmdbData.release_date || "",
+        first_air_date: tmdbData.first_air_date || "",
+        vote_average: String(tmdbData.vote_average || 0),
+        vote_count: String(tmdbData.vote_count || 0),
+        popularity: String(tmdbData.popularity || 0),
+        genre_ids: (tmdbData.genre_ids || []).join(", "),
+        original_language: tmdbData.original_language || "pt",
+        adult: tmdbData.adult || false,
         video: fileName,
+        // streamP2P URL into URLTxt, but clear other URL fields so old data doesn't persist
         URLTxt: streamP2pUrl,
+        URLvideo: "",
+        txtUrl: "",
+        videoStreamp: "",
+        temporadas: {},
       })
 
       setMessage(`✅ Arquivo "${fileName}" importado com sucesso! Todos os dados da TMDB foram carregados.`)
@@ -381,17 +397,82 @@ export default function AdminPage() {
 
   const [showJson, setShowJson] = useState(false)
 
-  const importAllFiles = () => {
+  // Função para carregar o próximo item da fila no formulário
+  const loadNextFromQueue = async (index: number) => {
+    if (index >= importQueue.length) {
+      // Fim da fila
+      setIsQueueMode(false)
+      setImportQueue([])
+      setCurrentQueueIndex(0)
+      setMessage(`✅ Fila de importação concluída! Todos os ${importQueue.length} itens foram processados.`)
+      return
+    }
+
+  // Resetar formulário antes de carregar o próximo para evitar dados anteriores
+  resetForm()
+  const file = importQueue[index]
+  await importStreamP2PFile(file)
+  setCurrentQueueIndex(index)
+  }
+
+  // Função para iniciar modo fila (importar todos sequencialmente)
+  const importAllFiles = async () => {
     if (!streamp2pFiles || streamp2pFiles.length === 0) {
       setMessage('⚠️ Não há arquivos para importar')
       return
     }
-    // Preencher com o primeiro arquivo como atalho; podemos ajustar para múltiplos se desejar
-    const first = streamp2pFiles[0]
-    const candidate = first.url || first.path || first.name || ''
-    setFormData({ ...formData, video: candidate, URLvideo: candidate, URLTxt: candidate })
+
+    // Configurar a fila
+    setImportQueue([...streamp2pFiles])
+    setCurrentQueueIndex(0)
+    setIsQueueMode(true)
     setShowFilesModal(false)
-    setMessage(`✅ Importado 1 de ${streamp2pFiles.length} arquivos (atalho).`) 
+
+    // Carregar o primeiro item
+    await importStreamP2PFile(streamp2pFiles[0])
+  }
+
+  // Função para pular item atual e ir para o próximo
+  const skipCurrentAndNext = async () => {
+    const nextIndex = currentQueueIndex + 1
+    if (nextIndex >= importQueue.length) {
+      setIsQueueMode(false)
+      setImportQueue([])
+      setCurrentQueueIndex(0)
+      setMessage('✅ Fila de importação concluída!')
+      resetForm()
+      return
+    }
+    // Resetar formulário antes de carregar o próximo
+    resetForm()
+    setCurrentQueueIndex(nextIndex)
+    await importStreamP2PFile(importQueue[nextIndex])
+  }
+
+  // Função para ir para o próximo após salvar
+  const goToNextInQueue = async () => {
+    const nextIndex = currentQueueIndex + 1
+    if (nextIndex >= importQueue.length) {
+      setIsQueueMode(false)
+      setImportQueue([])
+      setCurrentQueueIndex(0)
+      setMessage('✅ Fila de importação concluída!')
+      resetForm()
+      return
+    }
+    // Resetar formulário antes de carregar o próximo
+    resetForm()
+    setCurrentQueueIndex(nextIndex)
+    await importStreamP2PFile(importQueue[nextIndex])
+  }
+
+  // Função para cancelar a fila
+  const cancelQueue = () => {
+    setIsQueueMode(false)
+    setImportQueue([])
+    setCurrentQueueIndex(0)
+    resetForm()
+    setMessage('Fila de importação cancelada.')
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -415,10 +496,24 @@ export default function AdminPage() {
         setMessage(
           `✅ ${activeTab === "filmes" ? "Filme" : activeTab === "series" ? "Série" : "Anime"} adicionado com sucesso!`,
         )
-        resetForm()
+        
+        // Se estiver no modo fila, avançar para o próximo item
+        if (isQueueMode) {
+          setTimeout(() => {
+            goToNextInQueue()
+          }, 500) // Pequeno delay para mostrar mensagem de sucesso
+        } else {
+          resetForm()
+        }
       } else if (response.status === 409) {
         // 409 Conflict = Duplicata
         setMessage(`⚠️ ${result.message || "Este item já existe no banco de dados!"}`)
+        // No modo fila, também avançar após duplicata (já foi salvo antes)
+        if (isQueueMode) {
+          setTimeout(() => {
+            goToNextInQueue()
+          }, 1000)
+        }
       } else {
         setMessage(`❌ Erro: ${result.error || result.message}`)
       }
@@ -508,6 +603,40 @@ export default function AdminPage() {
               <SearchResults results={searchResults} onSelectResult={selectResult} loadingTMDB={loadingTMDB} />
             )}
 
+            {/* Queue status bar */}
+            {isQueueMode && (
+              <div className="mb-4 p-3 bg-blue-900/30 border border-blue-700 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-blue-400 font-medium">📋 Modo Fila</span>
+                    <span className="text-zinc-300">
+                      Item {currentQueueIndex + 1} de {importQueue.length}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={skipCurrentAndNext}
+                      className="px-3 py-1 bg-yellow-600 hover:bg-yellow-700 rounded text-white text-sm"
+                    >
+                      ⏭️ Pular
+                    </button>
+                    <button
+                      onClick={cancelQueue}
+                      className="px-3 py-1 bg-red-600 hover:bg-red-700 rounded text-white text-sm"
+                    >
+                      ❌ Cancelar Fila
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-2 w-full bg-zinc-800 rounded-full h-2">
+                  <div 
+                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${((currentQueueIndex + 1) / importQueue.length) * 100}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
             {/* Form */}
             {formData.id && (
               <MediaForm
@@ -517,6 +646,8 @@ export default function AdminPage() {
                 activeTab={activeTab}
                 loading={loading}
                 loadingTMDB={loadingTMDB}
+                isQueueMode={isQueueMode}
+                onQueueNext={goToNextInQueue}
               />
             )}
 
@@ -529,7 +660,13 @@ export default function AdminPage() {
                     <div className="flex items-center gap-2">
                       <button onClick={fetchStreamP2PFiles} className="px-3 py-1 bg-zinc-800 rounded">Recarregar</button>
                       <button onClick={() => setShowJson(s => !s)} className="px-3 py-1 bg-zinc-800 rounded">{showJson ? 'Esconder JSON' : 'Mostrar JSON'}</button>
-                      <button onClick={importAllFiles} className="px-3 py-1 bg-blue-700 rounded text-white">Importar todos</button>
+                      <button 
+                        onClick={importAllFiles} 
+                        className="px-3 py-1 bg-blue-700 rounded text-white disabled:opacity-50"
+                        disabled={streamp2pFiles.length === 0}
+                      >
+                        📋 Iniciar fila ({streamp2pFiles.length})
+                      </button>
                       <button onClick={() => setShowFilesModal(false)} className="px-3 py-1 bg-zinc-800 rounded">Fechar</button>
                     </div>
                   </div>
@@ -551,7 +688,12 @@ export default function AdminPage() {
                             <td className="p-2 align-top text-sm break-all">{f.url || f.path || f.name}</td>
                             <td className="p-2 align-top text-sm">{f.createdAt || f.created_at || '-'}</td>
                             <td className="p-2 align-top text-sm">
-                              <button onClick={() => importStreamP2PFile(f)} className="px-2 py-1 bg-blue-600 rounded text-white">Importar</button>
+                              <button 
+                                onClick={() => importStreamP2PFile(f)} 
+                                className="px-2 py-1 bg-blue-600 rounded text-white"
+                              >
+                                Importar
+                              </button>
                             </td>
                           </tr>
                         ))}

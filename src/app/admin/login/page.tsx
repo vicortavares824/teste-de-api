@@ -49,7 +49,7 @@ export default function LoginPage() {
             <span className="text-4xl">🎬</span>
           </div>
           <h1 className="text-3xl font-bold text-white mb-2">CineStream Admin</h1>
-          <p className="text-zinc-400">Faça login para acessar o painel</p>
+          <p className="text-zinc-400">Faça login para acessar o painel de administração</p>
         </div>
 
         {/* Card de Login */}

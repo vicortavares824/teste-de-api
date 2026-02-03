@@ -243,15 +243,20 @@ export default function AdminPage() {
       }
       const json = await res.json()
 
-      // Função helper para normalizar nomes (remove pontos, hifens, anos, qualidade)
+      // Função helper para normalizar nomes (remove pontos, hifens, anos, qualidade, extensões)
       const normalizeName = (name: string): string => {
         return name
           .toLowerCase()
           .trim()
-          // Remover informações de qualidade e ano
+          // Remover extensões de arquivo
+          .replace(/\.(mkv|mp4|avi|mov|wmv|flv|webm)$/i, '')
+          // Remover informações de qualidade, ano e codec
           .replace(/\.(19|20)\d{2}\..*$/i, '') // Remove .2024.1080p.WEB-DL.DUAL etc
-          .replace(/\.(1080p|720p|480p|4k|hd|web-dl|bluray|dvdrip|dual).*$/i, '')
-          // Substituir pontos e hifens por espaços
+          .replace(/\.(1080p|720p|480p|4k|hd|web-dl|bluray|dvdrip|dual|nacional).*$/i, '')
+          .replace(/\.5\.1.*$/i, '') // Remove .5.1.mkv
+          // Remover anos entre parênteses
+          .replace(/\s*\((19|20)\d{2}\)\s*/g, ' ')
+          // Substituir pontos, hifens e underscores por espaços
           .replace(/[.\-_]/g, ' ')
           // Remover espaços extras
           .replace(/\s+/g, ' ')

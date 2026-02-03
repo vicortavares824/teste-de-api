@@ -243,6 +243,21 @@ export default function AdminPage() {
       }
       const json = await res.json()
 
+      // Função helper para normalizar nomes (remove pontos, hifens, anos, qualidade)
+      const normalizeName = (name: string): string => {
+        return name
+          .toLowerCase()
+          .trim()
+          // Remover informações de qualidade e ano
+          .replace(/\.(19|20)\d{2}\..*$/i, '') // Remove .2024.1080p.WEB-DL.DUAL etc
+          .replace(/\.(1080p|720p|480p|4k|hd|web-dl|bluray|dvdrip|dual).*$/i, '')
+          // Substituir pontos e hifens por espaços
+          .replace(/[.\-_]/g, ' ')
+          // Remover espaços extras
+          .replace(/\s+/g, ' ')
+          .trim()
+      }
+
       // Função helper: busca paginada de títulos via /api/admin/list-media
       const fetchAllTitlesForType = async (typeName: string, maxPages = 10) => {
         const titles: string[] = []
@@ -254,8 +269,11 @@ export default function AdminPage() {
             const data = await listRes.json()
             const items = data.items || []
             items.forEach((it: any) => {
-              const t = (it.title || it.name || it.original_title || it.original_name || '').toLowerCase().trim()
-              if (t) titles.push(t)
+              const originalTitle = (it.title || it.name || it.original_title || it.original_name || '').trim()
+              if (originalTitle) {
+                const normalized = normalizeName(originalTitle)
+                if (normalized) titles.push(normalized)
+              }
             })
             // parar se não houver mais páginas
             if (!data.totalPages || page >= data.totalPages) break
@@ -277,10 +295,15 @@ export default function AdminPage() {
       const titulosExistentes = new Set<string>()
       filmesTitles.concat(seriesTitles, animesTitles).forEach((t) => titulosExistentes.add(t))
 
-      // Filtrar arquivos StreamP2P removendo os que já existem
+      // Filtrar arquivos StreamP2P removendo os que já existem (comparação normalizada)
       const arquivosNovos = (json.files || []).filter((file: any) => {
-        const nomeArquivo = (file.name || '').toLowerCase().trim()
-        return nomeArquivo && !titulosExistentes.has(nomeArquivo)
+        const nomeArquivo = (file.name || '').trim()
+        if (!nomeArquivo) return false
+        
+        const nomeNormalizado = normalizeName(nomeArquivo)
+        if (!nomeNormalizado) return false
+        
+        return !titulosExistentes.has(nomeNormalizado)
       })
 
       setStreamp2pFiles(arquivosNovos)

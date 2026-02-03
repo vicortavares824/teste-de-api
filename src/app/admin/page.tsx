@@ -230,9 +230,65 @@ export default function AdminPage() {
         throw new Error(err.error || 'Falha ao buscar arquivos')
       }
       const json = await res.json()
-      setStreamp2pFiles(json.files || [])
+
+      // Função helper: busca paginada de títulos via /api/admin/list-media
+      const fetchAllTitlesForType = async (typeName: string, maxPages = 10) => {
+        const titles: string[] = []
+        try {
+          let page = 1
+          while (page <= maxPages) {
+            const listRes = await fetch(`/api/admin/list-media?type=${typeName}&page=${page}&limit=50&search=`)
+            if (!listRes.ok) break
+            const data = await listRes.json()
+            const items = data.items || []
+            items.forEach((it: any) => {
+              const t = (it.title || it.name || it.original_title || it.original_name || '').toLowerCase().trim()
+              if (t) titles.push(t)
+            })
+            // parar se não houver mais páginas
+            if (!data.totalPages || page >= data.totalPages) break
+            page += 1
+          }
+        } catch (e) {
+          console.warn(`Erro ao buscar lista de ${typeName}:`, e)
+        }
+        return titles
+      }
+
+      // Coletar títulos de filmes, séries e animes (limitado a N páginas cada)
+      const [filmesTitles, seriesTitles, animesTitles] = await Promise.all([
+        fetchAllTitlesForType('filmes', 10),
+        fetchAllTitlesForType('series', 10),
+        fetchAllTitlesForType('animes', 10),
+      ])
+
+      const titulosExistentes = new Set<string>()
+      filmesTitles.concat(seriesTitles, animesTitles).forEach((t) => titulosExistentes.add(t))
+
+      // Filtrar arquivos StreamP2P removendo os que já existem
+      const arquivosNovos = (json.files || []).filter((file: any) => {
+        const nomeArquivo = (file.name || '').toLowerCase().trim()
+        return nomeArquivo && !titulosExistentes.has(nomeArquivo)
+      })
+
+      setStreamp2pFiles(arquivosNovos)
       setShowFilesModal(true)
-      if ((json.files || []).length === 0) setMessage('⚠️ Nenhum arquivo encontrado no StreamP2P')
+
+      if (arquivosNovos.length === 0) {
+        const totalArquivos = (json.files || []).length
+        if (totalArquivos > 0) {
+          setMessage(`✅ Todos os ${totalArquivos} arquivo(s) já foram adicionados ao banco de dados!`)
+        } else {
+          setMessage('⚠️ Nenhum arquivo encontrado no StreamP2P')
+        }
+      } else {
+        const existentes = (json.files || []).length - arquivosNovos.length
+        if (existentes > 0) {
+          setMessage(`📊 Mostrando ${arquivosNovos.length} arquivo(s) novo(s). ${existentes} já foi/foram adicionado(s).`)
+        } else {
+          setMessage(`📊 Mostrando ${arquivosNovos.length} arquivo(s) novo(s).`)
+        }
+      }
     } catch (e: any) {
       setMessage(`❌ Erro ao buscar arquivos StreamP2P: ${e.message}`)
     } finally {
@@ -258,7 +314,7 @@ export default function AdminPage() {
       const streamP2pUrl = `https://cinestreamtent.strp2p.live/#${fileId}`
       
       // 3. Tentar buscar o arquivo .txt (manifest/playlist)
-      let m3u8Url = streamP2pUrl
+
      
 
       // 4. Buscar informações na TMDB usando o título
@@ -290,7 +346,7 @@ export default function AdminPage() {
 
       const tmdbData = await tmdbResponse.json()
 
-      // 6. Preencher o formulário com todos os dados
+      // 6. Preencher o formulário com todos os dados TMDB (sem mexer em URLvideo, mas adiciona URLTxt com o link StreamP2P)
       setFormData({
         ...formData,
         id: String(tmdbData.id),
@@ -310,7 +366,6 @@ export default function AdminPage() {
         original_language: tmdbData.original_language,
         adult: tmdbData.adult,
         video: fileName,
-        URLvideo: m3u8Url,
         URLTxt: streamP2pUrl,
       })
 

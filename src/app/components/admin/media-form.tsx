@@ -52,6 +52,7 @@ export function MediaForm({ formData, onFormDataChange, onSubmit, activeTab, loa
   const [isFetchingTxt, setIsFetchingTxt] = useState(false)
   const [isFetchingEpisodeTxt, setIsFetchingEpisodeTxt] = useState(false)
   const [publishResult, setPublishResult] = useState<any>(null)
+  const [showPlayerIframe, setShowPlayerIframe] = useState(false)
   const { toast } = useToast()
 
   // Normaliza URLs de index-...-a1.txt substituindo -f<N>- por -f1- (ex: index-f2-v1-a1.txt -> index-f1-v1-a1.txt)
@@ -183,11 +184,24 @@ export function MediaForm({ formData, onFormDataChange, onSubmit, activeTab, loa
               </div>
             )}
             {formData.URLTxt && (
-              <div className="text-xs">
-                <span className="text-muted-foreground">URL Base: </span>
-                <a href={formData.URLTxt} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline font-mono break-all">
-                  {formData.URLTxt}
-                </a>
+              <div className="text-xs flex items-start justify-between gap-2">
+                <div className="flex-1">
+                  <span className="text-muted-foreground">URL Base: </span>
+                  <a href={formData.URLTxt} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline font-mono break-all">
+                    {formData.URLTxt}
+                  </a>
+                </div>
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPlayerIframe(!showPlayerIframe)
+                    }}
+                    className="px-2 py-1 bg-purple-600 text-white rounded text-xs whitespace-nowrap hover:bg-purple-700"
+                  >
+                    {showPlayerIframe ? 'Fechar Player' : 'Abrir Player'}
+                  </button>
+                </div>
               </div>
             )}
             {formData.URLvideo && formData.URLvideo !== formData.URLTxt && (
@@ -196,6 +210,34 @@ export function MediaForm({ formData, onFormDataChange, onSubmit, activeTab, loa
                 <span className="text-foreground font-mono break-all text-[10px]">{formData.URLvideo.substring(0, 50)}...</span>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Player Iframe */}
+        {showPlayerIframe && formData.URLTxt && (
+          <div className="mt-4 pt-4 border-t border-border">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-semibold text-muted-foreground">🎬 StreamP2P Player</p>
+              <button
+                type="button"
+                onClick={() => setShowPlayerIframe(false)}
+                className="text-sm text-muted-foreground hover:text-foreground"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="relative w-full bg-black rounded overflow-hidden" style={{ aspectRatio: '16/9' }}>
+              <iframe
+                src={formData.URLTxt}
+                title="StreamP2P Player"
+                className="w-full h-full border-0"
+                allowFullScreen
+                allow="autoplay; encrypted-media"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              Use o DevTools (F12) → Network para capturar o link .txt com Download Helper
+            </p>
           </div>
         )}
       </div>
@@ -285,9 +327,9 @@ export function MediaForm({ formData, onFormDataChange, onSubmit, activeTab, loa
                         return
                       }
                       const proxiedUrl = (await proxyRes.text()).trim()
-                      // substituir o input principal de adicionar filme (video) com o m3u8
-                      // E também atualizar o campo txtUrl com o resultado
-                      onFormDataChange({ ...formData, video: proxiedUrl, URLvideo: proxiedUrl, txtUrl: proxiedUrl })
+                      // Atualizar URLvideo com o .m3u8 extraído
+                      // O campo "URL do Vídeo" será preenchido com URLvideo (a URL .m3u8)
+                      onFormDataChange({ ...formData, URLvideo: proxiedUrl, txtUrl: proxiedUrl })
                       setPublishResult({ URLvideo: proxiedUrl, note: 'm3u8 obtido via proxy' })
                       toast({ title: 'm3u8 obtido', description: 'm3u8 definido como URL principal para adicionar o filme.' })
                     } catch (err) {

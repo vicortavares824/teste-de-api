@@ -55,16 +55,10 @@ export async function POST(request: NextRequest) {
       newItem.title = data.title;
       newItem.tmdb = String(data.id);
       
-      // Se tiver URLTxt (proxied .m3u8 do proxy), prioriza ele como URLvideo
-      // Não salvar URLTxt como campo separado — colocamos o proxied m3u8 em URLvideo
-      if (data.URLTxt) {
-        newItem.video = data.URLTxt;
-        newItem.URLvideo = data.URLTxt;
-
-      } else {
-        newItem.video = data.video || '';
-        newItem.URLvideo = data.video || '';
-      }
+      // Para filmes, URLvideo é o campo principal (URL real do vídeo)
+      // video é apenas o nome/título do arquivo
+      newItem.video = data.URLvideo || data.video || '';
+      newItem.URLvideo = data.URLvideo || data.video || '';
     } else {
       // Séries e Animes
       newItem.original_name = data.original_name || data.name;

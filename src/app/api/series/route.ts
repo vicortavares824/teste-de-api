@@ -151,7 +151,59 @@ export async function GET(request: Request) {
 
       const temporadas = normalizeSeasons(detail);
 
-      const mappedObj: any = {
+      // Montar arrays por temporada com metadados (numero, titulo, sinopse_eps, thumb, eps_xx)
+      const temporadas_meta_arrays: Record<string, Array<any>> = {};
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const addEpisodeMeta = (seasonKey: string, epObj: any) => {
+        if (!temporadas_meta_arrays[seasonKey]) temporadas_meta_arrays[seasonKey] = [];
+        temporadas_meta_arrays[seasonKey].push(epObj);
+      };
+
+      // Se detail.seasons estiver presente (formato TMDB-like)
+      if (Array.isArray(detail?.seasons) && detail.seasons.length > 0) {
+        for (const s of detail.seasons) {
+          const seasonNum = s.season_number ?? s.season ?? s.number ?? s.numero_temporada ?? 1;
+          const seasonKey = `temporada_${seasonNum}`;
+          if (!Array.isArray(s.episodes)) continue;
+          for (const ep of s.episodes) {
+            const epNum = ep.episode_number ?? ep.number ?? ep.episodio ?? ep.ep ?? 1;
+            const epKey = `eps_${pad(Number(epNum))}`;
+            const rawUrl = String(ep.file || ep.url || ep.video || ep.link || ep.source || '');
+            const proxied = rawUrl.replace('/pages/tv.php?id=', '/pages/proxys.php?id=');
+            const banner = ep.episode_banner || ep.still_path || ep.still || '';
+            const thumb = banner ? (banner.startsWith('http') ? (banner.includes('/image.tmdb.org/t/p/') ? banner.replace(/\/t\/p\/[^/]+\//, '/t/p/original/') : banner) : buildImageUrl(extractImagePath(String(banner)), 'original')) : '';
+            addEpisodeMeta(seasonKey, {
+              numero: Number(epNum),
+              titulo: ep.titulo || ep.title || ep.name || '',
+              sinopse_eps: ep.sinopse || ep.overview || ep.description || '',
+              thumb,
+              [epKey]: proxied,
+            });
+          }
+        }
+      }
+      // Caso exista um array plano detail.episodes
+      else if (Array.isArray(detail?.episodes) && detail.episodes.length > 0) {
+        for (const ep of detail.episodes) {
+          const seasonNum = ep.numero_temporada ?? ep.temporada ?? ep.season ?? ep.season_number ?? 1;
+          const epNum = ep.episodio_numero ?? ep.episodio ?? ep.episode ?? ep.episode_number ?? ep.number ?? 1;
+          const seasonKey = `temporada_${seasonNum}`;
+          const epKey = `eps_${pad(Number(epNum))}`;
+          const rawUrl = String(ep.url || ep.file || ep.link || ep.video || ep.source || '');
+          const proxied = rawUrl.replace('/pages/tv.php?id=', '/pages/proxys.php?id=');
+          const banner = ep.episode_banner || ep.still_path || ep.still || '';
+          const thumb = banner ? (banner.startsWith('http') ? (banner.includes('/image.tmdb.org/t/p/') ? banner.replace(/\/t\/p\/[^/]+\//, '/t/p/original/') : banner) : buildImageUrl(extractImagePath(String(banner)), 'original')) : '';
+          addEpisodeMeta(seasonKey, {
+            numero: Number(epNum),
+            titulo: ep.titulo || ep.title || ep.name || '',
+            sinopse_eps: ep.sinopse || ep.overview || ep.description || '',
+            thumb,
+            [epKey]: proxied,
+          });
+        }
+      }
+
+  const mappedObj: any = {
   id: Number(tmdb),
   name: detail.nome || detail.title || detail.name || item?.name || item?.title || '',
         original_name: detail.original_name || detail.original_title || '',
@@ -165,6 +217,11 @@ export async function GET(request: Request) {
         backdrop_path: backdropUrl || '',
         ...temporadas,
       };
+
+      // Substituir temporadas por arrays com metadados quando disponíveis
+      for (const k of Object.keys(temporadas_meta_arrays)) {
+        mappedObj[k] = temporadas_meta_arrays[k];
+      }
 
       const needTmdb = !mappedObj.name || !mappedObj.poster_path || !mappedObj.backdrop_path;
       if (needTmdb) {

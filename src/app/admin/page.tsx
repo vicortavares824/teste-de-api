@@ -361,6 +361,23 @@ export default function AdminPage() {
     }
   }
 
+  const downloadStreamp2pJson = () => {
+    try {
+      const data = streamp2pFiles || []
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `streamp2p-files-${new Date().toISOString().slice(0,10)}.json`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      setMessage('Erro ao gerar download')
+    }
+  }
+
   const importStreamP2PFile = async (file: any) => {
     setMessage('🔄 Processando arquivo StreamP2P...')
     setShowFilesModal(false)
@@ -765,6 +782,7 @@ export default function AdminPage() {
                     <div className="flex items-center gap-2">
                       <button onClick={fetchStreamP2PFiles} className="px-3 py-1 bg-zinc-800 rounded">Recarregar</button>
                       <button onClick={() => setShowJson(s => !s)} className="px-3 py-1 bg-zinc-800 rounded">{showJson ? 'Esconder JSON' : 'Mostrar JSON'}</button>
+                      <button onClick={downloadStreamp2pJson} className="px-3 py-1 bg-green-600 rounded text-white" disabled={streamp2pFiles.length === 0}>⬇️ Download JSON</button>
                       <button 
                         onClick={importAllFiles} 
                         className="px-3 py-1 bg-blue-700 rounded text-white disabled:opacity-50"

@@ -1,5 +1,6 @@
 
 import { NextResponse } from 'next/server';
+import { getDb } from '../../../lib/mongodb';
 
 type ExternalFilme = {
   id: string;
@@ -36,10 +37,95 @@ function transformUrl(originalUrl: string | undefined) {
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const page = parseInt(searchParams.get('page') || '1', 10);
+  const limit = parseInt(searchParams.get('limit') || '20', 10);
 
-  const externalUrl = `https://roxanoplay.bb-bet.top/api/filmes.php?page=${page}&limit=20`;
+  const externalUrl = `https://roxanoplay.bb-bet.top/api/filmes.php?page=${page}&limit=${limit}`;
 
   try {
+    // Primeiro: tentar ler da MongoDB (collection configurada)
+    try {
+      const db = await getDb();
+      const collectionName = process.env.MONGODB_COLLECTION || 'filmes';
+      const col = db.collection(collectionName);
+
+      const skip = Math.max(0, (page - 1) * limit);
+      const [docs, total] = await Promise.all([
+        col.find({})
+          .skip(skip)
+          .limit(limit)
+          .toArray(),
+        col.countDocuments(),
+      ]);
+
+      if (Array.isArray(docs) && docs.length > 0) {
+        // Mapear documentos do Mongo para o formato esperado
+        const extractImagePath = (img: string | undefined) => {
+          if (!img) return '';
+          try {
+            const u = new URL(img);
+            return u.pathname.startsWith('/') ? u.pathname : `/${u.pathname}`;
+          } catch (e) {
+            return img.startsWith('/') ? img : `/${img}`;
+          }
+        };
+
+        const buildImageUrl = (path: string, size: 'w500' | 'w1280' | string = 'w500') => {
+          if (!path) return '';
+          if (path.startsWith('http')) return path;
+          return `https://image.tmdb.org/t/p/${size}${path}`;
+        };
+
+        const seen = new Set<string>();
+        const mapped = docs
+          .filter((f: any) => (f.ativo == null ? true : String(f.ativo) === '1'))
+          .filter((f: any) => {
+            const key = String(f.tmdb_id || f.id || f._id || '');
+            if (!key) return true;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          })
+          .map((f: any) => {
+            const posterPath = extractImagePath(f.imagem_capa || f.poster_path || f.poster || '');
+            const posterUrl = buildImageUrl(posterPath, 'w500');
+            const backdropUrl = buildImageUrl(posterPath, 'w1280');
+
+            return {
+              adult: false,
+              backdrop_path: posterPath || '',
+              backdrop_url: backdropUrl || '',
+              genres: f.generos || f.genres || [],
+              id: f.tmdb_id ? Number(f.tmdb_id) : (f.id ? Number(f.id) : (f._id ? String(f._id) : null)),
+              original_language: f.original_language || 'pt',
+              overview: f.sinopse || f.overview || '',
+              popularity: f.nota_tmdb ? Number(f.nota_tmdb) : (f.popularity ? Number(f.popularity) : 0),
+              poster_path: posterPath || '',
+              poster_url: posterUrl || '',
+              video: transformUrl(f.url || f.URLvideo || f.video),
+              vote_average: f.nota_tmdb ? Number(f.nota_tmdb) : (f.vote_average ? Number(f.vote_average) : 0),
+              vote_count: f.nota_tmdb ? Math.round(Number(f.nota_tmdb) * 10) : (f.vote_count ? Number(f.vote_count) : 0),
+              original_title: f.nome || f.original_title || '',
+              release_date: f.ano || f.release_date || '',
+              title: f.nome || f.title || '',
+              URLvideo: transformUrl(f.url || f.URLvideo || f.video),
+              tmdb: f.tmdb_id ? String(f.tmdb_id) : (f.tmdb ? String(f.tmdb) : (f.id ? String(f.id) : '')),
+            };
+          });
+
+        return NextResponse.json({
+          page: page,
+          per_page: mapped.length,
+          total,
+          total_pages: Math.max(1, Math.ceil(total / Math.max(1, limit))),
+          results: mapped,
+        });
+      }
+    } catch (mongoErr) {
+      console.warn('[api/filmes] Erro ao acessar MongoDB, fallback para API externa:', mongoErr);
+      // continua para fallback externo
+    }
+
+    // Fallback: buscar da API externa se Mongo não estiver disponível ou vazio
     const res = await fetch(externalUrl);
     if (!res.ok) {
       return NextResponse.json({ error: 'Erro ao buscar API externa' }, { status: res.status });
@@ -63,28 +149,28 @@ export async function GET(request: Request) {
 
     // Helpers para manipular imagens (extrai caminho e constrói URLs nos tamanhos usados)
     const extractImagePath = (img: string | undefined) => {
-      if (!img) return ''
+      if (!img) return '';
       try {
-        const u = new URL(img)
-        return u.pathname.startsWith('/') ? u.pathname : `/${u.pathname}`
+        const u = new URL(img);
+        return u.pathname.startsWith('/') ? u.pathname : `/${u.pathname}`;
       } catch (e) {
         // Se já for apenas o path
-        return img.startsWith('/') ? img : `/${img}`
+        return img.startsWith('/') ? img : `/${img}`;
       }
-    }
+    };
 
     const buildImageUrl = (path: string, size: 'w500' | 'w1280' | string = 'w500') => {
-      if (!path) return ''
+      if (!path) return '';
       // Se path já for uma URL completa, retorna ela
-      if (path.startsWith('http')) return path
-      return `https://image.tmdb.org/t/p/${size}${path}`
-    }
+      if (path.startsWith('http')) return path;
+      return `https://image.tmdb.org/t/p/${size}${path}`;
+    };
 
     // Mapear para o formato antigo utilizado pelo projeto
     const mapped = results.map((f) => {
-      const posterPath = extractImagePath(f.imagem_capa)
-      const posterUrl = buildImageUrl(posterPath, 'w500')
-      const backdropUrl = buildImageUrl(posterPath, 'w1280')
+      const posterPath = extractImagePath(f.imagem_capa);
+      const posterUrl = buildImageUrl(posterPath, 'w500');
+      const backdropUrl = buildImageUrl(posterPath, 'w1280');
 
       return {
         adult: false,
@@ -105,8 +191,8 @@ export async function GET(request: Request) {
         title: f.nome || '',
         URLvideo: transformUrl(f.url),
         tmdb: f.tmdb_id ? String(f.tmdb_id) : String(f.id),
-      }
-    })
+      };
+    });
 
     return NextResponse.json({
       page: data.page || page,

@@ -31,6 +31,24 @@ const buildImageUrl = (path: string, size: 'w500' | 'w1280' | string = 'w500') =
   return `https://image.tmdb.org/t/p/${size}${path}`;
 };
 
+function transformEpisodeUrl(originalUrl: string | undefined) {
+  if (!originalUrl) return originalUrl || '';
+  const PROXY_BASE = 'https://cinestream-kappa.vercel.app/api/proxy?url=';
+  try {
+    if (originalUrl.startsWith(PROXY_BASE) || originalUrl.includes('/api/proxy?url=')) return originalUrl;
+    // prefer proxys.php path for tv pages (keep existing behavior) then wrap with proxy
+    const modified = String(originalUrl).replace('/pages/tv.php?id=', '/pages/proxys.php?id=');
+    return PROXY_BASE + encodeURIComponent(modified);
+  } catch (e) {
+    try {
+      const fallback = String(originalUrl).replace('/pages/tv.php?id=', '/pages/proxys.php?id=');
+      return PROXY_BASE + encodeURIComponent(fallback);
+    } catch (inner) {
+      return originalUrl || '';
+    }
+  }
+}
+
 function normalizeSeasons(detail: any): Record<string, Record<string, string>> {
   const temporadas: Record<string, Record<string, string>> = {};
 
@@ -122,7 +140,7 @@ export async function GET(request: Request) {
           // collect and proxify URLs
           for (const ep of pageEpisodes) {
             const urlEp = String(ep.url || ep.file || '');
-            const proxied = urlEp.replace('/pages/tv.php?id=', '/pages/proxys.php?id=');
+            const proxied = transformEpisodeUrl(urlEp);
             episodes.push({ ...ep, url: proxied });
           }
         }
@@ -169,7 +187,7 @@ export async function GET(request: Request) {
             const epNum = ep.episode_number ?? ep.number ?? ep.episodio ?? ep.ep ?? 1;
             const epKey = `eps_${pad(Number(epNum))}`;
             const rawUrl = String(ep.file || ep.url || ep.video || ep.link || ep.source || '');
-            const proxied = rawUrl.replace('/pages/tv.php?id=', '/pages/proxys.php?id=');
+            const proxied = transformEpisodeUrl(rawUrl);
             const banner = ep.episode_banner || ep.still_path || ep.still || '';
             const thumb = banner ? (banner.startsWith('http') ? (banner.includes('/image.tmdb.org/t/p/') ? banner.replace(/\/t\/p\/[^/]+\//, '/t/p/original/') : banner) : buildImageUrl(extractImagePath(String(banner)), 'original')) : '';
             addEpisodeMeta(seasonKey, {
@@ -190,7 +208,7 @@ export async function GET(request: Request) {
           const seasonKey = `temporada_${seasonNum}`;
           const epKey = `eps_${pad(Number(epNum))}`;
           const rawUrl = String(ep.url || ep.file || ep.link || ep.video || ep.source || '');
-          const proxied = rawUrl.replace('/pages/tv.php?id=', '/pages/proxys.php?id=');
+          const proxied = transformEpisodeUrl(rawUrl);
           const banner = ep.episode_banner || ep.still_path || ep.still || '';
           const thumb = banner ? (banner.startsWith('http') ? (banner.includes('/image.tmdb.org/t/p/') ? banner.replace(/\/t\/p\/[^/]+\//, '/t/p/original/') : banner) : buildImageUrl(extractImagePath(String(banner)), 'original')) : '';
           addEpisodeMeta(seasonKey, {

@@ -18,18 +18,28 @@ type ExternalFilme = {
 
 function transformUrl(originalUrl: string | undefined) {
   if (!originalUrl) return originalUrl || '';
-  // Substitui mov.php por hostmov.php mantendo o id
+
+  // Evitar proxificar duas vezes
+  const PROXY_BASE = 'https://cinestream-kappa.vercel.app/api/proxy?url=';
   try {
+    if (originalUrl.startsWith(PROXY_BASE) || originalUrl.includes('/api/proxy?url=')) return originalUrl;
+
     const u = new URL(originalUrl);
     // Se o pathname contém mov.php, trocamos para hostmov.php
     if (u.pathname.includes('/pages/mov.php') || u.pathname.endsWith('mov.php')) {
       u.pathname = u.pathname.replace('mov.php', 'hostmov.php');
-      return u.toString();
     }
-    return originalUrl;
+
+    const modified = u.toString();
+    return PROXY_BASE + encodeURIComponent(modified);
   } catch (e) {
-    // Fallback simples
-    return originalUrl.replace('/pages/mov.php?id=', '/pages/hostmov.php?id=');
+    // Fallback simples: tenta substituir o path e proxificar
+    try {
+      const fallback = originalUrl.replace('/pages/mov.php?id=', '/pages/hostmov.php?id=');
+      return PROXY_BASE + encodeURIComponent(fallback);
+    } catch (inner) {
+      return originalUrl || '';
+    }
   }
 }
 

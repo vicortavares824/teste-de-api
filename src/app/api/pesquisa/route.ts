@@ -239,6 +239,38 @@ const loadLocalData = async (file: string): Promise<any[]> => {
   }
 };
 
+/**
+ * Carrega todos os arquivos de séries locais divididos: series.json, series_part1.json, series_part2.json, ...
+ */
+const loadAllSeriesFiles = async (): Promise<any[]> => {
+  const candidates = ['series.json'];
+
+  // tenta detectar arquivos adicionais na raiz do projeto com prefixo series_part
+  try {
+    const root = process.cwd();
+    const dirents = await fs.readdir(root);
+    for (const name of dirents) {
+      if (/^series_part\d+\.json$/i.test(name) && !candidates.includes(name)) {
+        candidates.push(name);
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  const all: any[] = [];
+  for (const f of candidates) {
+    try {
+      const items = await loadLocalData(f);
+      if (Array.isArray(items) && items.length > 0) all.push(...items);
+    } catch (e) {
+      // continue
+    }
+  }
+
+  return all;
+};
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const query = searchParams.get('query');
@@ -288,7 +320,7 @@ export async function GET(request: Request) {
   // Carregar dados locais
   const [localMovies, localSeries] = await Promise.all([
     loadLocalData('filmes.json'),
-    loadLocalData('series.json'),
+    loadAllSeriesFiles(),
   ]);
 
   // Enriquecer séries

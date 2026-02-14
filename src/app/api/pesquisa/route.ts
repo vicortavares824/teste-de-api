@@ -238,33 +238,52 @@ const loadLocalData = async (file: string): Promise<any[]> => {
     return [];
   }
 };
+const fetchJSONData = async (url: string): Promise<any[]> => {
+  try {
+    // Adicionamos um cache de 1 hora (3600s) para não sobrecarregar o GitHub
+    const res = await fetch(url, { next: { revalidate: 3600 } }); 
+    if (!res.ok) return [];
+    
+    const data = await res.json();
 
+    if (Array.isArray(data)) return data;
+    if (data.results && Array.isArray(data.results)) return data.results;
+    
+    if (data.pages && Array.isArray(data.pages)) {
+      const items: any[] = [];
+      for (const page of data.pages) {
+        if (page.results && Array.isArray(page.results)) {
+          items.push(...page.results);
+        }
+      }
+      return items;
+    }
+
+    return [];
+  } catch (error) {
+    console.warn(`[fetchJSONData] Falha ao carregar ${url}:`, error);
+    return [];
+  }
+};
 /**
  * Carrega todos os arquivos de séries locais divididos: series.json, series_part1.json, series_part2.json, ...
  */
 const loadAllSeriesFiles = async (): Promise<any[]> => {
-  const candidates = ['series.json'];
-
-  // tenta detectar arquivos adicionais na raiz do projeto com prefixo series_part
-  try {
-    const root = process.cwd();
-    const dirents = await fs.readdir(root);
-    for (const name of dirents) {
-      if (/^series_part\d+\.json$/i.test(name) && !candidates.includes(name)) {
-        candidates.push(name);
-      }
-    }
-  } catch (e) {
-    // ignore
-  }
+  // Lista com as URLs brutas (Raw) dos seus JSONs
+  const urls = [
+    'https://raw.githubusercontent.com/vicortavares824/teste-de-api/refs/heads/main/series_part1.json',
+    'https://raw.githubusercontent.com/vicortavares824/teste-de-api/refs/heads/main/series_part2.json'
+    // Se você tiver um "series.json" original lá no GitHub, coloque a URL dele aqui também!
+  ];
 
   const all: any[] = [];
-  for (const f of candidates) {
-    try {
-      const items = await loadLocalData(f);
-      if (Array.isArray(items) && items.length > 0) all.push(...items);
-    } catch (e) {
-      // continue
+  
+  // Faz o download de todos os arquivos simultaneamente para ser mais rápido
+  const results = await Promise.all(urls.map(url => fetchJSONData(url)));
+
+  for (const items of results) {
+    if (Array.isArray(items) && items.length > 0) {
+      all.push(...items);
     }
   }
 

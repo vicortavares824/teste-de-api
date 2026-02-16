@@ -4,8 +4,6 @@ import { NextResponse, NextRequest } from 'next/server';
 import path from 'path';
 import { promises as fs } from 'fs';
 
-const DEFAULT_COUNT = 50;
-
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -34,29 +32,12 @@ export async function GET(request: NextRequest) {
       items = data;
     }
 
-    // ---------------------------------------------------------
-    // A MÁGICA ACONTECE AQUI:
-    // Transforma os links .ts em .m3u8 antes de enviar pro Frontend
-    // ---------------------------------------------------------
-    const itemsTratados = items.map((canal: any) => {
-      if (canal.iframe && typeof canal.iframe === 'string') {
-        // Esta expressão regular (Regex) troca o .ts por .m3u8 
-        // e preserva qualquer coisa que venha depois (como ?token=123)
-        const novoLink = canal.iframe.replace(/\.ts(\?|$)/i, '.m3u8$1');
-        
-        return {
-          ...canal,
-          iframe: novoLink
-        };
-      }
-      return canal;
-    });
-
+    // Retorna os dados originais exatamente como estão no JSON, sem converter para .m3u8
     return NextResponse.json({
       total,
       page: count ? page : 1,
-      count: count ?? itemsTratados.length,
-      items: itemsTratados, // Retornamos a lista tratada
+      count: count ?? items.length,
+      items: items,
     });
   } catch (error) {
     console.error('[api/canais_tv] Erro ao ler canais_tv.json:', error);

@@ -302,7 +302,29 @@ export async function GET(request: Request) {
   }
 
   const externalSearch = `https://streaming-api-ready-for-render.onrender.com/api/search?q=${encodeURIComponent(query)}`;
-  const localOnly = !!searchParams.get('localOnly');
+  // Parâmetros de modo:
+  // - padrão: apenas local
+  // - ?externalOnly=1 ou ?mode=external => apenas externo
+  // - ?includeExternal=1 ou ?mode=both => local + externo
+  const paramLocalOnly = !!searchParams.get('localOnly') || !!searchParams.get('preferLocal');
+  const paramExternalOnly = !!searchParams.get('externalOnly') || searchParams.get('mode') === 'external';
+  const paramIncludeExternal = !!searchParams.get('includeExternal') || searchParams.get('mode') === 'both';
+
+  let localOnly = false;
+  let externalOnly = false;
+  let includeExternal = false;
+
+  if (paramLocalOnly) {
+    localOnly = true;
+  } else if (paramExternalOnly) {
+    externalOnly = true;
+  } else if (paramIncludeExternal) {
+    includeExternal = true;
+  } else {
+    // comportamento padrão: apenas local
+    localOnly = true;
+  }
+
   const minRelevanceScore = Number(searchParams.get('minScore')) || 20;
 
   let externalResults: any[] = [];
@@ -448,19 +470,18 @@ export async function GET(request: Request) {
   const filmesLocal = localMovieMatches.map(mapLocalMovie);
   const seriesLocal = localSeriesMatches.map(mapLocalSeries);
 
-  // Controle
-  const preferLocal = !!searchParams.get('preferLocal');
-  const externalOnly = !!searchParams.get('externalOnly');
-
-  if (preferLocal) {
+  // Controle: usar as flags calculadas acima
+  if (localOnly) {
+    // Se pediu apenas local, retornamos só os dados locais.
+    // Se um fetch externo estiver em andamento, deixamos rodar em background (não aguardamos).
     if (externalFetchPromise) void externalFetchPromise;
     const external_url = `${new URL(request.url).origin}/api/pesquisa?query=${encodeURIComponent(query)}&externalOnly=1`;
-    
-    // ⭐ Deduplicar
+
+    // ⭐ Deduplicar locais
     const dedup = deduplicateByIdAndTitle([...filmesLocal, ...seriesLocal]);
     const filmes = dedup.filter((i: any) => i.media_type === 'movie');
     const series = dedup.filter((i: any) => i.media_type === 'tv');
-    
+
     return NextResponse.json({
       filmes,
       series,
@@ -471,6 +492,7 @@ export async function GET(request: Request) {
       source: {
         external_fetch_started: !!externalFetchPromise,
         external_url,
+        mode: 'local_only',
       },
     });
   }

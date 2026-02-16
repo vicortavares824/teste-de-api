@@ -68,6 +68,7 @@ export default function AdminPage() {
   const [streamp2pFiles, setStreamp2pFiles] = useState<any[]>([])
   const [showFilesModal, setShowFilesModal] = useState(false)
   const [loadingFiles, setLoadingFiles] = useState(false)
+  const [streamp2pDiagnostics, setStreamp2pDiagnostics] = useState<any>(null)
   
   // Fila de importação sequencial
   const [importQueue, setImportQueue] = useState<any[]>([])
@@ -160,22 +161,55 @@ export default function AdminPage() {
 
   // Função helper para normalizar nomes (remove pontos, hifens, anos, qualidade, extensões)
   const normalizeName = (name: string): string => {
-    return name
-      .toLowerCase()
-      .trim()
-      // Remover extensões de arquivo
-      .replace(/\.(mkv|mp4|avi|mov|wmv|flv|webm)$/i, '')
-      // Remover informações de qualidade, ano e codec
-      .replace(/\.(19|20)\d{2}\..*$/i, '') // Remove .2024.1080p.WEB-DL.DUAL etc
-      .replace(/\.(1080p|720p|480p|4k|hd|web-dl|bluray|dvdrip|dual|nacional).*$/i, '')
-      .replace(/\.5\.1.*$/i, '') // Remove .5.1.mkv
-      // Remover anos entre parênteses
-      .replace(/\s*\((19|20)\d{2}\)\s*/g, ' ')
-      // Substituir pontos, hifens e underscores por espaços
-      .replace(/[.\-_]/g, ' ')
-      // Remover espaços extras
-      .replace(/\s+/g, ' ')
-      .trim()
+  if (!name) return ''
+  let s = String(name).toLowerCase().trim()
+
+  // Remove extensão de arquivo
+  s = s.replace(/\.(mkv|mp4|avi|mov|wmv|flv|webm)$/i, '')
+
+  // Remove qualidade / resolução e tokens comuns
+  s = s.replace(/\b(CAMRip|HDCAM|HDRip|WEB-?DL|WEBRip|BluRay|BRRip|DVDRip|HDTV|720p|1080p|2160p|4k|uhd)\b/ig, '')
+
+  // Remove informações de áudio
+  // include accented variants (áudio) and common forms
+  s = s.replace(/\b(Dual[-\s]?Audio|Dual[-\s]?Áudio|DUAL|DUB|DUBLADO|LEGENDADO|Nacional|5\.1|2\.0|AC3|AAC|DTS|\báudio\b|\baudio\b)\b/ig, '')
+
+  // Remove codecs
+  s = s.replace(/\b(x264|x265|H\.?264|H\.?265|HEVC|AVC|XviD|DivX)\b/ig, '')
+
+  // Remove release tags
+  s = s.replace(/\b(EN-RGB|REMUX|PROPER|REPACK|EXTENDED|UNRATED|DIRECTORS\.?CUT)\b/ig, '')
+
+  // Substitui pontos e underscores por espaços
+  s = s.replace(/[._]/g, ' ')
+
+  // Captura ano (se existir) e remove do título
+  const yearMatch = s.match(/\(?((?:19|20)\d{2})\)?/)
+  const year = yearMatch ? yearMatch[1] : null
+  s = s.replace(/\(?((?:19|20)\d{2})\)?/g, '')
+
+  // Remover palavras residuais comuns (online, assistir, link, torrent, magnet, servidor)
+  s = s.replace(/\b(online|assistir|link|torrent|magnet|servidor|download|versao|versão|dublado)\b/ig, '')
+
+  // Normalizar e remover diacríticos para facilitar comparações (ex: áudio -> audio)
+  try {
+    s = s.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  } catch (e) {
+    // fallback: ignore if normalization unsupported
+  }
+
+  // Remove caracteres especiais (mantém letras, números, espaços e hifen)
+  // usa Unicode property para preservar letras acentuadas
+  s = s.replace(/[^\p{L}\p{N}\s\-]/gu, ' ')
+
+  // Normaliza espaços extras
+  s = s.replace(/\s+/g, ' ').trim()
+
+  // Remover tokens finais como 'audio' que podem permanecer após limpeza
+  s = s.replace(/\b(audio|audio)\b/ig, '')
+  s = s.replace(/\s+/g, ' ').trim()
+
+  return s
   }
 
   const searchByTitle = async () => {
@@ -267,47 +301,47 @@ export default function AdminPage() {
         throw new Error(err.error || 'Falha ao buscar arquivos')
       }
       const json = await res.json()
-
-      // Função helper para normalizar nomes (remove pontos, hifens, anos, qualidade, extensões)
-      const normalizeName = (name: string): string => {
-        return name
-          .toLowerCase()
-          .trim()
-          // Remover extensões de arquivo
-          .replace(/\.(mkv|mp4|avi|mov|wmv|flv|webm)$/i, '')
-          // Remover informações de qualidade, ano e codec
-          .replace(/\.(19|20)\d{2}\..*$/i, '') // Remove .2024.1080p.WEB-DL.DUAL etc
-          .replace(/\.(1080p|720p|480p|4k|hd|web-dl|bluray|dvdrip|dual|nacional).*$/i, '')
-          .replace(/\.5\.1.*$/i, '') // Remove .5.1.mkv
-          // Remover anos entre parênteses
-          .replace(/\s*\((19|20)\d{2}\)\s*/g, ' ')
-          // Substituir pontos, hifens e underscores por espaços
-          .replace(/[.\-_]/g, ' ')
-          // Remover espaços extras
-          .replace(/\s+/g, ' ')
-          .trim()
-      }
+  // usar a função global normalizeName definida no topo do arquivo
 
       // Função helper: busca paginada de títulos via /api/admin/list-media
-      const fetchAllTitlesForType = async (typeName: string, maxPages = 10) => {
+      // Busca a primeira página para descobrir totalPages e então itera até todas as páginas (com um cap de segurança)
+      const fetchAllTitlesForType = async (typeName: string) => {
         const titles: string[] = []
         try {
-          let page = 1
-          while (page <= maxPages) {
-            const listRes = await fetch(`/api/admin/list-media?type=${typeName}&page=${page}&limit=50&search=`)
-            if (!listRes.ok) break
-            const data = await listRes.json()
-            const items = data.items || []
-            items.forEach((it: any) => {
-              const originalTitle = (it.title || it.name || it.original_title || it.original_name || '').trim()
-              if (originalTitle) {
-                const normalized = normalizeName(originalTitle)
-                if (normalized) titles.push(normalized)
-              }
-            })
-            // parar se não houver mais páginas
-            if (!data.totalPages || page >= data.totalPages) break
-            page += 1
+          const firstRes = await fetch(`/api/admin/list-media?type=${typeName}&page=1&limit=50&search=`)
+          if (!firstRes.ok) return titles
+          const firstData = await firstRes.json()
+          const itemsFirst = firstData.items || []
+          itemsFirst.forEach((it: any) => {
+            const originalTitle = (it.title || it.name || it.original_title || it.original_name || '').trim()
+            if (originalTitle) {
+              const normalized = normalizeName(originalTitle)
+              if (normalized) titles.push(normalized)
+            }
+          })
+
+          const totalPages = firstData.totalPages || 1
+          const SAFETY_PAGE_CAP = 1000
+          const pagesToFetch = Math.min(totalPages, SAFETY_PAGE_CAP)
+
+          // Buscar as páginas restantes (2..pagesToFetch)
+          for (let page = 2; page <= pagesToFetch; page++) {
+            try {
+              const listRes = await fetch(`/api/admin/list-media?type=${typeName}&page=${page}&limit=50&search=`)
+              if (!listRes.ok) break
+              const data = await listRes.json()
+              const items = data.items || []
+              items.forEach((it: any) => {
+                const originalTitle = (it.title || it.name || it.original_title || it.original_name || '').trim()
+                if (originalTitle) {
+                  const normalized = normalizeName(originalTitle)
+                  if (normalized) titles.push(normalized)
+                }
+              })
+            } catch (e) {
+              console.warn(`Erro ao buscar página ${page} de ${typeName}:`, e)
+              break
+            }
           }
         } catch (e) {
           console.warn(`Erro ao buscar lista de ${typeName}:`, e)
@@ -317,24 +351,99 @@ export default function AdminPage() {
 
       // Coletar títulos de filmes, séries e animes (limitado a N páginas cada)
       const [filmesTitles, seriesTitles, animesTitles] = await Promise.all([
-        fetchAllTitlesForType('filmes', 10),
-        fetchAllTitlesForType('series', 10),
-        fetchAllTitlesForType('animes', 10),
+        fetchAllTitlesForType('filmes'),
+        fetchAllTitlesForType('series'),
+        fetchAllTitlesForType('animes'),
       ])
 
       const titulosExistentes = new Set<string>()
       filmesTitles.concat(seriesTitles, animesTitles).forEach((t) => titulosExistentes.add(t))
 
-      // Filtrar arquivos StreamP2P removendo os que já existem (comparação normalizada)
-      const arquivosNovos = (json.files || []).filter((file: any) => {
+      // Diagnóstico: analisar por normalização exata e por substring para entender discrepâncias
+      const allFiles = (json.files || [])
+      const totalFiles = allFiles.length
+      const exactMatches: any[] = []
+      const substringMatches: any[] = []
+      const unmatched: any[] = []
+
+      // Preconvert titulosExistentes to array for substring checks
+      const existingArray = Array.from(titulosExistentes)
+
+      // Helper: tokenize normalized title into set of tokens
+      const tokenize = (s: string) => {
+        return Array.from(new Set((s || '').split(/\s+/).filter((t) => t && t.length > 1)))
+      }
+
+      // Helper: Jaccard similarity between two normalized strings (token sets)
+      const jaccard = (a: string, b: string) => {
+        const ta = tokenize(a)
+        const tb = tokenize(b)
+        if (ta.length === 0 || tb.length === 0) return 0
+        const setA = new Set(ta)
+        const setB = new Set(tb)
+        let inter = 0
+        for (const t of setA) if (setB.has(t)) inter++
+        const union = new Set([...setA, ...setB]).size
+        return union === 0 ? 0 : inter / union
+      }
+
+      for (const file of allFiles) {
         const nomeArquivo = (file.name || '').trim()
-        if (!nomeArquivo) return false
-        
+        if (!nomeArquivo) {
+          // treat as unmatched but skip
+          continue
+        }
         const nomeNormalizado = normalizeName(nomeArquivo)
-        if (!nomeNormalizado) return false
-        
-        return !titulosExistentes.has(nomeNormalizado)
-      })
+        if (!nomeNormalizado) {
+          unmatched.push({ file, normalized: nomeNormalizado })
+          continue
+        }
+
+        if (titulosExistentes.has(nomeNormalizado)) {
+          exactMatches.push({ file, normalized: nomeNormalizado })
+          continue
+        }
+
+        // substring/fuzzy check (cheap heuristic)
+        let foundSub = false
+        for (const t of existingArray) {
+          if (!t) continue
+          if (t.includes(nomeNormalizado) || nomeNormalizado.includes(t)) {
+            substringMatches.push({ file, normalized: nomeNormalizado, matchedWith: t })
+            foundSub = true
+            break
+          }
+        }
+        if (!foundSub) {
+          // compute top-3 similar existing titles to explain why unmatched
+          const sims: Array<{ candidate: string; score: number }> = []
+          for (const t of existingArray) {
+            if (!t) continue
+            const score = jaccard(nomeNormalizado, t)
+            if (score > 0) sims.push({ candidate: t, score })
+          }
+          sims.sort((a, b) => b.score - a.score)
+          const top3 = sims.slice(0, 3).map((s) => ({ candidate: s.candidate, score: Number(s.score.toFixed(3)) }))
+          unmatched.push({ file, normalized: nomeNormalizado, suggestions: top3 })
+        }
+      }
+
+      // Arquivos considerados "novos" na filtragem atual são os unmatched (sem correspondência exata)
+      const arquivosNovos = unmatched.map((it) => it.file)
+
+      // Preparar objeto diagnóstico com amostras
+      const diagnostics = {
+        totalFiles,
+        totalExistingTitles: titulosExistentes.size,
+        exactMatchesCount: exactMatches.length,
+        substringMatchesCount: substringMatches.length,
+        unmatchedCount: unmatched.length,
+        sampleExact: exactMatches.slice(0, 10).map((x) => ({ name: x.file.name, normalized: x.normalized })),
+        sampleSubstring: substringMatches.slice(0, 10).map((x) => ({ name: x.file.name, normalized: x.normalized, matchedWith: x.matchedWith })),
+  sampleUnmatched: unmatched.slice(0, 10).map((x) => ({ name: x.file.name, normalized: x.normalized, suggestions: x.suggestions || [] })),
+      }
+
+      setStreamp2pDiagnostics(diagnostics)
 
       setStreamp2pFiles(arquivosNovos)
       setShowFilesModal(true)
@@ -823,6 +932,58 @@ export default function AdminPage() {
                       </tbody>
                     </table>
                   </div>
+                  {/* Diagnostics panel */}
+                  {streamp2pDiagnostics && (
+                    <div className="mt-3 p-3 bg-zinc-900 border border-zinc-800 rounded text-sm">
+                      <h4 className="font-semibold mb-2">🔎 Diagnóstico de filtragem</h4>
+                      <div className="grid grid-cols-2 gap-3 text-sm text-zinc-300">
+                        <div>Total de arquivos</div><div className="text-right">{streamp2pDiagnostics.totalFiles}</div>
+                        <div>Títulos existentes no DB</div><div className="text-right">{streamp2pDiagnostics.totalExistingTitles}</div>
+                        <div>Correspondências exatas</div><div className="text-right">{streamp2pDiagnostics.exactMatchesCount}</div>
+                        <div>Correspondências por substring</div><div className="text-right">{streamp2pDiagnostics.substringMatchesCount}</div>
+                        <div>Sem correspondência (novos)</div><div className="text-right">{streamp2pDiagnostics.unmatchedCount}</div>
+                      </div>
+
+                      <div className="mt-3">
+                        <p className="text-zinc-400 text-sm mb-2">Amostras (até 10) — revise os nomes e normalizações:</p>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                          <div>
+                            <p className="font-medium text-zinc-200">Exatas</p>
+                            <ul className="list-disc list-inside text-zinc-400">
+                              {streamp2pDiagnostics.sampleExact.map((s: any, i: number) => (
+                                <li key={i}>{s.name} → {s.normalized}</li>
+                              ))}
+                            </ul>
+                          </div>
+                          <div>
+                            <p className="font-medium text-zinc-200">Substring</p>
+                            <ul className="list-disc list-inside text-zinc-400">
+                              {streamp2pDiagnostics.sampleSubstring.map((s: any, i: number) => (
+                                <li key={i}>{s.name} → {s.normalized} (matched: {s.matchedWith})</li>
+                              ))}
+                            </ul>
+                          </div>
+                          <div>
+                            <p className="font-medium text-zinc-200">Novos (unmatched)</p>
+                            <ul className="list-disc list-inside text-zinc-400">
+                              {streamp2pDiagnostics.sampleUnmatched.map((s: any, i: number) => (
+                                <li key={i}>
+                                  <div className="font-semibold text-zinc-200">{s.name} → {s.normalized}</div>
+                                  {s.suggestions && s.suggestions.length > 0 && (
+                                    <div className="text-xs text-zinc-400">Sugestões:
+                                      {s.suggestions.map((sg: any, idx: number) => (
+                                        <span key={idx} className="ml-2">{sg.candidate} ({sg.score})</span>
+                                      ))}
+                                    </div>
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   {showJson && (
                     <div className="mt-3 p-3 bg-zinc-900 border border-zinc-800 rounded text-sm max-h-80 overflow-auto">
                       <pre className="whitespace-pre-wrap">{JSON.stringify(streamp2pFiles, null, 2)}</pre>

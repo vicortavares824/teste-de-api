@@ -29,16 +29,34 @@ export async function GET(request: NextRequest) {
     if (count) {
       const offset = Math.max(0, (page - 1) * count);
       items = data.slice(offset, offset + count);
-    } else if (total > DEFAULT_COUNT) {
-      // se não informar count, limitar para DEFAULT_COUNT por segurança
-      items = data.slice(0, DEFAULT_COUNT);
+    } else {
+      // sem 'count' informado, retornar todos os canais
+      items = data;
     }
+
+    // ---------------------------------------------------------
+    // A MÁGICA ACONTECE AQUI:
+    // Transforma os links .ts em .m3u8 antes de enviar pro Frontend
+    // ---------------------------------------------------------
+    const itemsTratados = items.map((canal: any) => {
+      if (canal.iframe && typeof canal.iframe === 'string') {
+        // Esta expressão regular (Regex) troca o .ts por .m3u8 
+        // e preserva qualquer coisa que venha depois (como ?token=123)
+        const novoLink = canal.iframe.replace(/\.ts(\?|$)/i, '.m3u8$1');
+        
+        return {
+          ...canal,
+          iframe: novoLink
+        };
+      }
+      return canal;
+    });
 
     return NextResponse.json({
       total,
       page: count ? page : 1,
-      count: count ?? items.length,
-      items,
+      count: count ?? itemsTratados.length,
+      items: itemsTratados, // Retornamos a lista tratada
     });
   } catch (error) {
     console.error('[api/canais_tv] Erro ao ler canais_tv.json:', error);

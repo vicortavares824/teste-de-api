@@ -4,7 +4,6 @@ import { getCache, setCache } from '../../../../lib/cache';
 import fs from 'fs/promises';
 import path from 'path';
 
-const EXTERNAL_BASE = 'https://roxanoplay.bb-bet.top/api';
 
 const extractImagePath = (img: string | undefined) => {
   if (!img) return '';
@@ -91,9 +90,31 @@ export async function GET(request: Request, { params }: { params: Promise<Record
 
   // Carregar dados de séries a partir dos JSONs locais em vez de chamadas externas
   const loadLocalSeries = async (): Promise<any[]> => {
-    const candidates = ['series.json', 'series_part1.json', 'series_part2.json'];
+    const rawUrls = [
+      'https://raw.githubusercontent.com/vicortavares824/teste-de-api/refs/heads/main/series_part1.json',
+      'https://raw.githubusercontent.com/vicortavares824/teste-de-api/refs/heads/main/series_part2.json',
+    ];
     const all: any[] = [];
-    for (const fileName of candidates) {
+
+    // Primeiro tenta fetch relativo (arquivos em public/) — funciona no Vercel/hosting
+    for (const url of rawUrls) {
+      try {
+        const res = await fetch(url, { next: { revalidate: 3600 } }).catch(() => null);
+        if (!res || !res.ok) continue;
+        const parsed = await res.json().catch(() => null);
+        if (!parsed) continue;
+        if (Array.isArray(parsed)) all.push(...parsed);
+        else if (parsed.results && Array.isArray(parsed.results)) all.push(...parsed.results);
+      } catch (e) {
+        continue;
+      }
+    }
+
+    if (all.length > 0) return all;
+
+    // Fallback para filesystem (desenvolvimento local)
+    const candidatesFs = ['series.json', 'series_part1.json', 'series_part2.json'];
+    for (const fileName of candidatesFs) {
       try {
         const filePath = path.resolve(process.cwd(), fileName);
         const content = await fs.readFile(filePath, { encoding: 'utf8' }).catch(() => null);
@@ -105,10 +126,10 @@ export async function GET(request: Request, { params }: { params: Promise<Record
           all.push(...parsed.results);
         }
       } catch (e) {
-        // ignore missing or parse errors for each file
         continue;
       }
     }
+
     return all;
   };
 

@@ -4,12 +4,17 @@ import { NextResponse, NextRequest } from 'next/server';
 import path from 'path';
 import { promises as fs } from 'fs';
 
+const ADULT_KEYWORDS = [
+  'adulto', 'xxx', '18+', '+18', 'playboy', 'sexy',
+  'venus', 'brasileirinhas', 'sextreme', 'privê', 'for man'
+];
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const countParam = Number(searchParams.get('count'));
     const pageParam = Number(searchParams.get('page'));
-    
+
     // Tag especial para liberar conteúdo adulto
     const showAdult = searchParams.get('adult') === 'true';
 
@@ -24,33 +29,20 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Formato inválido: esperado array' }, { status: 500 });
     }
 
-    // ---------------------------------------------------------
-    // SISTEMA DE BLOQUEIO DE CONTEÚDO ADULTO
-    // ---------------------------------------------------------
     let filteredData = data;
-    
-    // Se a tag '?adult=true' NÃO foi passada, nós removemos os canais +18
+
     if (!showAdult) {
       filteredData = data.filter((canal: any) => {
+        // Normaliza os textos para busca (minúsculo e evita erro se for nulo)
         const title = (canal.title || '').toLowerCase();
-        // Caso seu JSON tenha um campo "group" ou "category" para as categorias
-        const group = (canal.group || canal.category || '').toLowerCase(); 
-        
-        // Adicione aqui as palavras que identificam os canais que devem ser escondidos
-        const isAdultChannel = 
-          group.includes('adulto') || 
-          group.includes('xxx') || 
-          group.includes('18+') || 
-          title.includes('playboy') || 
-          title.includes('sexy') || 
-          title.includes('venus') ||
-          title.includes('xxx') ||
-          title.includes('BRASILEIRINHAS')
-          ||
-          title.includes('sextreme')
+        const group = (canal.group || canal.category || '').toLowerCase();
 
-        // Se for canal adulto (true), o '!' inverte para 'false' e ele é removido da lista
-        return !isAdultChannel; 
+        // Verifica se o título ou o grupo contém alguma das palavras proibidas
+        const isAdult = ADULT_KEYWORDS.some(word =>
+          title.includes(word) || group.includes(word)
+        );
+
+        return !isAdult; // mantém se não for adulto
       });
     }
 
@@ -61,15 +53,13 @@ export async function GET(request: NextRequest) {
     if (count) {
       const offset = Math.max(0, (page - 1) * count);
       items = filteredData.slice(offset, offset + count);
-    } else {
-      items = filteredData;
     }
 
     return NextResponse.json({
       total,
       page: count ? page : 1,
       count: count ?? items.length,
-      items: items,
+      items,
     });
   } catch (error) {
     console.error('[api/canais_tv] Erro ao ler canais_tv.json:', error);

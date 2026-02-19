@@ -44,7 +44,10 @@ export async function GET(request: NextRequest) {
           title.includes('playboy') || 
           title.includes('sexy') || 
           title.includes('venus') ||
-          title.includes('xxx');
+          title.includes('xxx') ||
+          title.includes('BRASILEIRINHAS')
+          ||
+          title.includes('sextreme')
 
         // Se for canal adulto (true), o '!' inverte para 'false' e ele é removido da lista
         return !isAdultChannel; 

@@ -1,8 +1,9 @@
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 
 import { NextResponse, NextRequest } from 'next/server';
-import path from 'path';
-import { promises as fs } from 'fs';
+
+// Importa o JSON em tempo de build — funciona no runtime Edge (não usa fs)
+import canaisData from '../../../../canais_tv.json';
 
 const ADULT_KEYWORDS = [
   'adulto', 'xxx', '18+', '+18', 'playboy', 'sexy',
@@ -21,9 +22,8 @@ export async function GET(request: NextRequest) {
     const count = Number.isFinite(countParam) && countParam > 0 ? Math.max(1, Math.floor(countParam)) : undefined;
     const page = Number.isFinite(pageParam) && pageParam > 0 ? Math.floor(pageParam) : 1;
 
-    const filePath = path.resolve(process.cwd(), 'canais_tv.json');
-    const content = await fs.readFile(filePath, 'utf-8');
-    const data = JSON.parse(content);
+    // dados já importados em build time
+    const data = Array.isArray(canaisData) ? canaisData : [];
 
     if (!Array.isArray(data)) {
       return NextResponse.json({ error: 'Formato inválido: esperado array' }, { status: 500 });

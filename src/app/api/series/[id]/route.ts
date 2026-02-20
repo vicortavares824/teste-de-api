@@ -1,8 +1,8 @@
+export const runtime = 'edge';
+
 import { NextResponse } from 'next/server';
 import { fetchDetails as fetchTmdbDetails } from '../../../../lib/tmdb';
 import { getCache, setCache } from '../../../../lib/cache';
-import fs from 'fs/promises';
-import path from 'path';
 
 
 const extractImagePath = (img: string | undefined) => {
@@ -88,7 +88,7 @@ export async function GET(request: Request, { params }: { params: Promise<Record
   const id = resolvedParams?.id || '';
   if (!id) return NextResponse.json({ error: 'missing id' }, { status: 400 });
 
-  // Carregar dados de séries a partir dos JSONs locais em vez de chamadas externas
+  // Carregar dados de séries a partir dos JSONs hospedados no GitHub
   const loadLocalSeries = async (): Promise<any[]> => {
     const rawUrls = [
       'https://raw.githubusercontent.com/vicortavares824/teste-de-api/refs/heads/main/series_part1.json',
@@ -96,7 +96,6 @@ export async function GET(request: Request, { params }: { params: Promise<Record
     ];
     const all: any[] = [];
 
-    // Primeiro tenta fetch relativo (arquivos em public/) — funciona no Vercel/hosting
     for (const url of rawUrls) {
       try {
         const res = await fetch(url, { next: { revalidate: 3600 } }).catch(() => null);
@@ -105,26 +104,6 @@ export async function GET(request: Request, { params }: { params: Promise<Record
         if (!parsed) continue;
         if (Array.isArray(parsed)) all.push(...parsed);
         else if (parsed.results && Array.isArray(parsed.results)) all.push(...parsed.results);
-      } catch (e) {
-        continue;
-      }
-    }
-
-    if (all.length > 0) return all;
-
-    // Fallback para filesystem (desenvolvimento local)
-    const candidatesFs = ['series.json', 'series_part1.json', 'series_part2.json'];
-    for (const fileName of candidatesFs) {
-      try {
-        const filePath = path.resolve(process.cwd(), fileName);
-        const content = await fs.readFile(filePath, { encoding: 'utf8' }).catch(() => null);
-        if (!content) continue;
-        const parsed = JSON.parse(content);
-        if (Array.isArray(parsed)) {
-          all.push(...parsed);
-        } else if (parsed.results && Array.isArray(parsed.results)) {
-          all.push(...parsed.results);
-        }
       } catch (e) {
         continue;
       }
